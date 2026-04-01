@@ -1,0 +1,28 @@
+# Sub-projects are independent git repos — exclude from this repo
+quick-suite-model-router/
+quick-suite-open-data/
+quick-suite-compute/
+
+# Python / CDK
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+cdk.out/
+.cdk.staging/
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
