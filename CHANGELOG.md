@@ -14,5 +14,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Open Data — public dataset search/load and institutional S3 data access
 - Compute — ephemeral analytics compute with ten analysis profiles
 
-[unreleased]: https://github.com/scttfrdmn/capstone/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/scttfrdmn/capstone/releases/tag/v0.1.0
+[unreleased]: https://github.com/scttfrdmn/quick-suite-capstone/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/scttfrdmn/quick-suite-capstone/releases/tag/v0.1.0

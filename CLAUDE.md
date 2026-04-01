@@ -176,7 +176,7 @@ SSM prefix: `/quick-suite/`
 Work is tracked in GitHub — not in local files. Do not add TODO lists or task
 tracking to CLAUDE.md files or create TODO.md files.
 
-- **Capstone (suite):** https://github.com/scttfrdmn/capstone/issues
+- **Capstone (suite):** https://github.com/scttfrdmn/quick-suite-capstone/issues
 - **Model Router:** https://github.com/scttfrdmn/quick-suite-model-router/issues
 - **Open Data:** https://github.com/scttfrdmn/quick-suite-open-data/issues
 - **Compute:** https://github.com/scttfrdmn/quick-suite-compute/issues
