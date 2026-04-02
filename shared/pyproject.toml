@@ -1,0 +1,19 @@
+[project]
+name = "quick-suite-shared"
+version = "0.1.0"
+description = "Shared infrastructure for Amazon Quick Suite extensions"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.170.0",
+    "constructs>=10.0.0",
+    "boto3>=1.26",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
