@@ -1,7 +1,8 @@
 # Sub-projects are independent git repos — exclude from this repo
-quick-suite-model-router/
-quick-suite-open-data/
+quick-suite-router/
+quick-suite-data/
 quick-suite-compute/
+quick-suite-claws/
 
 # Python / CDK
 __pycache__/

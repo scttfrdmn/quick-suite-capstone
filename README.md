@@ -1,4 +1,4 @@
-# Capstone
+# Quick Suite Extensions
 
 Extensions for [Amazon Quick Suite](https://aws.amazon.com/quick-suite/) via [Bedrock AgentCore Gateway](https://aws.amazon.com/bedrock/agentcore/).
 
@@ -6,11 +6,11 @@ Three independent CDK stacks that register as MCP tools in AgentCore Gateway, gi
 
 ## Components
 
-| Component | Repo | What It Does | Status |
-|-----------|------|-------------|--------|
-| **Model Router** | [quick-suite-model-router](https://github.com/scttfrdmn/quick-suite-model-router) | Multi-provider LLM routing (Bedrock, Anthropic, OpenAI, Gemini) with Bedrock Guardrails governance on every call | Implemented |
-| **Open Data** | [quick-suite-open-data](https://github.com/scttfrdmn/quick-suite-open-data) | Browse + load public datasets from the Registry of Open Data on AWS, plus institutional S3 data | Implemented |
-| **Compute** | [quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute) | Ephemeral analytics — clustering, regression, forecasting, and more — results land back as Quick Sight datasets | Implemented |
+| Component | Repo | What It Does | Version |
+|-----------|------|-------------|---------|
+| **Model Router** | [quick-suite-router](https://github.com/scttfrdmn/quick-suite-router) | Multi-provider LLM routing (Bedrock, Anthropic, OpenAI, Gemini) with Bedrock Guardrails governance, multi-turn conversation history, and response caching | v0.5.0 |
+| **Open Data** | [quick-suite-data](https://github.com/scttfrdmn/quick-suite-data) | Search + load 500+ public datasets from the Registry of Open Data on AWS; browse, preview, and register institutional S3 data as Quick Sight datasets | v0.5.0 |
+| **Compute** | [quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute) | Ephemeral analytics — 10 profiles (clustering, regression, forecasting, topic modeling, and more) — results land back as Quick Sight datasets | v0.5.0 |
 
 Each component deploys independently. Together they compose through AgentCore Gateway — Quick Suite's agent sees all tools from all deployed components and orchestrates them in conversation.
 
@@ -21,11 +21,16 @@ Quick Suite (Chat Agent / Quick Research / Quick Flows)
     │  MCP Actions Integration
     ▼
 AgentCore Gateway (MCP)
-    ├── analyze, generate, summarize, code  →  Model Router (LLM providers)
-    ├── roda_search, roda_load              →  Open Data (public datasets)
-    ├── s3_browse, s3_preview, s3_load      →  Open Data (institutional S3)
-    └── compute_run, compute_status         →  Compute (ephemeral analytics)
+    ├── analyze, generate, summarize, code, research  →  Model Router
+    ├── roda_search, roda_load                         →  Open Data (public datasets)
+    ├── s3_browse, s3_preview, s3_load                 →  Open Data (institutional S3)
+    └── compute_profiles, compute_run, compute_status  →  Compute (ephemeral analytics)
 ```
+
+The clAWS bridge connects Open Data and Compute: a `claws://roda-noaa-ghcn`
+URI in a compute job resolves to the registered Quick Sight dataset, letting
+Quick Suite orchestrate a full research-to-analysis workflow in a single
+conversation.
 
 ## Cost
 
@@ -37,7 +42,11 @@ AgentCore Gateway (MCP)
 
 ## Project Tracking
 
-Each component has its own GitHub Issues, milestones, and project board. See the individual component repos above.
+| Component | Issues | Milestone | Project Board |
+|-----------|--------|-----------|---------------|
+| Model Router | [quick-suite-router/issues](https://github.com/scttfrdmn/quick-suite-router/issues) | [v0.5.0](https://github.com/scttfrdmn/quick-suite-router/milestone/1) | [Board](https://github.com/users/scttfrdmn/projects/44) |
+| Open Data | [quick-suite-data/issues](https://github.com/scttfrdmn/quick-suite-data/issues) | [v0.5.0](https://github.com/scttfrdmn/quick-suite-data/milestone/1) | [Board](https://github.com/users/scttfrdmn/projects/45) |
+| Compute | [quick-suite-compute/issues](https://github.com/scttfrdmn/quick-suite-compute/issues) | [v0.5.0](https://github.com/scttfrdmn/quick-suite-compute/milestone/1) | [Board](https://github.com/users/scttfrdmn/projects/46) |
 
 ## License
 
