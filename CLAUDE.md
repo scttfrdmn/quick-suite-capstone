@@ -13,7 +13,7 @@ to call — the individual projects don't orchestrate each other.
   Quick Sight (BI), Quick Research (deep research), Quick Flows (workflow
   automation), Quick Automate (process optimization), and Quick Index
   (data discovery). NOT just QuickSight renamed — a broader agentic
-  platform. $40/user/month power users.
+  platform. $20/user/month (Professional) and $40/user/month (Enterprise).
 
 - **Quick Sight** — the BI and visualization capability WITHIN Quick Suite
   (formerly standalone "Amazon QuickSight"). Dashboards, SPICE, datasets,
@@ -28,8 +28,8 @@ to call — the individual projects don't orchestrate each other.
   as the MCP tool server. Converts APIs and Lambda functions into
   MCP-compatible tools. Handles auth, routing, semantic search.
 
-- **MCP Actions Integration** — how Quick Suite connects to external tools.
-  Quick Suite → MCP Actions Integration → AgentCore Gateway → Targets.
+- **MCP Actions** — how Quick Suite connects to external tools.
+  Quick Suite → MCP Actions → AgentCore Gateway → Targets.
 
 ```
 ~/src/quick-suite-capstone/
@@ -46,7 +46,7 @@ to call — the individual projects don't orchestrate each other.
 ```
 Amazon Quick Suite (Chat Agent / Quick Research / Quick Flows)
     │
-    │  MCP Actions Integration
+    │  MCP Actions
     ▼
 Bedrock AgentCore Gateway (MCP server, single Gateway, OAuth via Cognito)
     │
@@ -80,7 +80,7 @@ The Gateway discovers all tools, Quick Suite's agent picks which to call,
 and the Gateway dispatches to the correct backend. The model router is
 one peer among several tool sets.
 
-**All open-data and compute Lambdas are AgentCore Gateway Lambda targets.**
+**All data and compute Lambdas are AgentCore Gateway Lambda targets.**
 - No API Gateway needed — AgentCore Gateway invokes Lambdas directly via
   IAM execution role
 - Lambda handlers receive tool arguments as the event dict
@@ -116,7 +116,7 @@ def handler(event, context):
 
 ## Project Status
 
-### quick-suite-model-router ✅ v0.5.0
+### quick-suite-router ✅ v0.5.0
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
@@ -137,7 +137,7 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-open-data ✅ v0.5.0
+### quick-suite-data ✅ v0.5.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 

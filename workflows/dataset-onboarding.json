@@ -1,0 +1,106 @@
+{
+  "version": "1.0",
+  "name": "Dataset Onboarding",
+  "description": "Onboard a public RODA dataset into Quick Sight and run an initial correlation analysis to surface interesting signals for analysts.",
+  "mcp_gateway": "qs-agentcore-gateway",
+  "triggers": [
+    {
+      "type": "manual",
+      "label": "Onboard Dataset"
+    },
+    {
+      "type": "schedule",
+      "cron": "0 6 * * MON",
+      "label": "Weekly new dataset check"
+    }
+  ],
+  "inputs": {
+    "search_query": {
+      "type": "string",
+      "description": "Keyword or tag to search RODA, e.g. 'IPEDS enrollment higher education'"
+    },
+    "dataset_label": {
+      "type": "string",
+      "description": "Short label for the Quick Sight data source, e.g. 'ipeds-enrollment-2024'"
+    },
+    "target_column": {
+      "type": "string",
+      "default": "",
+      "description": "Optional: target column for correlation analysis. Leave empty for unsupervised."
+    }
+  },
+  "steps": [
+    {
+      "id": "search",
+      "label": "Search RODA for public datasets",
+      "tool": "qs-data___roda_search",
+      "parameters": {
+        "query": "{{inputs.search_query}}",
+        "limit": 10,
+        "exclude_deprecated": true
+      },
+      "outputs": {
+        "datasets": "$.datasets",
+        "top_slug": "$.datasets[0].slug",
+        "top_name": "$.datasets[0].name"
+      }
+    },
+    {
+      "id": "load",
+      "label": "Load dataset into Quick Sight",
+      "tool": "qs-data___roda_load",
+      "parameters": {
+        "slug": "{{steps.search.outputs.top_slug}}",
+        "dataset_label": "{{inputs.dataset_label}}"
+      },
+      "outputs": {
+        "dataset_id": "$.dataset_id",
+        "source_id": "$.source_id",
+        "row_count": "$.row_count"
+      }
+    },
+    {
+      "id": "compute",
+      "label": "Run initial correlation analysis",
+      "tool": "qs-compute___compute_run",
+      "parameters": {
+        "profile_id": "explore-correlations",
+        "source_uri": "claws://{{steps.load.outputs.source_id}}",
+        "user_arn": "{{context.user_arn}}",
+        "parameters": {
+          "target_column": "{{inputs.target_column}}",
+          "method": "pearson",
+          "top_n": 20
+        }
+      },
+      "outputs": {
+        "job_id": "$.job_id",
+        "execution_arn": "$.execution_arn"
+      }
+    },
+    {
+      "id": "wait_compute",
+      "label": "Wait for correlation analysis",
+      "tool": "qs-compute___compute_status",
+      "parameters": {
+        "job_id": "{{steps.compute.outputs.job_id}}"
+      },
+      "poll": {
+        "interval_seconds": 10,
+        "until": "$.status == 'succeeded' || $.status == 'failed'",
+        "timeout_seconds": 900
+      },
+      "outputs": {
+        "result_dataset_name": "$.result_dataset_name",
+        "status": "$.status"
+      }
+    }
+  ],
+  "outputs": {
+    "dataset_id": "{{steps.load.outputs.dataset_id}}",
+    "source_id": "{{steps.load.outputs.source_id}}",
+    "row_count": "{{steps.load.outputs.row_count}}",
+    "correlation_dataset": "{{steps.wait_compute.outputs.result_dataset_name}}",
+    "message": "Dataset '{{steps.search.outputs.top_name}}' loaded as '{{inputs.dataset_label}}' and correlation analysis complete. Open Quick Sight to explore {{steps.load.outputs.row_count}} rows."
+  }
+}

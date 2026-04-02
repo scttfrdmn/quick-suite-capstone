@@ -1,0 +1,144 @@
+{
+  "version": "1.0",
+  "name": "Institutional Data Audit",
+  "description": "Policy-gated audit workflow: browse institutional S3 sources, excavate targeted records with Cedar + Guardrail enforcement, refine findings, and deliver a provenance-tracked export for compliance review.",
+  "mcp_gateway": "qs-agentcore-gateway",
+  "triggers": [
+    {
+      "type": "manual",
+      "label": "Run Institutional Audit"
+    },
+    {
+      "type": "schedule",
+      "cron": "0 2 1 * *",
+      "label": "Monthly compliance audit"
+    }
+  ],
+  "inputs": {
+    "s3_prefix": {
+      "type": "string",
+      "description": "S3 prefix to audit, e.g. 's3://qs-institutional-data/financial-aid/2024/'"
+    },
+    "audit_objective": {
+      "type": "string",
+      "description": "Plain-language audit objective, e.g. 'Identify records with missing FAFSA completion dates for students in cohort 2024'"
+    },
+    "export_bucket": {
+      "type": "string",
+      "description": "S3 bucket for the final export, e.g. 's3://qs-audit-exports'"
+    },
+    "reviewer_arn": {
+      "type": "string",
+      "description": "IAM ARN of the compliance reviewer who will receive the export"
+    }
+  },
+  "steps": [
+    {
+      "id": "browse",
+      "label": "Browse institutional S3 sources",
+      "tool": "qs-data___s3_browse",
+      "parameters": {
+        "prefix": "{{inputs.s3_prefix}}",
+        "max_keys": 50
+      },
+      "outputs": {
+        "files": "$.files",
+        "top_file": "$.files[0].key",
+        "source_bucket": "$.bucket"
+      }
+    },
+    {
+      "id": "preview",
+      "label": "Sample schema and PII surface area",
+      "tool": "qs-data___s3_preview",
+      "parameters": {
+        "s3_path": "{{steps.browse.outputs.top_file}}",
+        "sample_rows": 50
+      },
+      "outputs": {
+        "schema": "$.schema",
+        "pii_detected": "$.pii_detected",
+        "inferred_types": "$.inferred_types"
+      }
+    },
+    {
+      "id": "plan",
+      "label": "Generate policy-gated audit query",
+      "tool": "qs-claws___plan",
+      "parameters": {
+        "objective": "{{inputs.audit_objective}}",
+        "source_name": "{{steps.browse.outputs.top_file}}",
+        "schema": "{{steps.preview.outputs.schema}}"
+      },
+      "outputs": {
+        "plan_id": "$.plan_id",
+        "sql": "$.sql",
+        "estimated_cost_usd": "$.estimated_cost_usd",
+        "cedar_decision": "$.cedar_decision"
+      },
+      "on_condition": {
+        "if": "{{steps.plan.outputs.cedar_decision}} != 'allow'",
+        "then": "fail",
+        "message": "Cedar policy denied this query plan. Review audit_objective or request elevated permissions."
+      }
+    },
+    {
+      "id": "excavate",
+      "label": "Execute audit query",
+      "tool": "qs-claws___excavate",
+      "parameters": {
+        "plan_id": "{{steps.plan.outputs.plan_id}}"
+      },
+      "outputs": {
+        "run_id": "$.run_id",
+        "row_count": "$.row_count",
+        "guardrail_action": "$.guardrail_action"
+      },
+      "on_condition": {
+        "if": "{{steps.excavate.outputs.guardrail_action}} == 'INTERVENED'",
+        "then": "fail",
+        "message": "Bedrock Guardrail blocked excavation results. Results contain content that cannot be exported."
+      }
+    },
+    {
+      "id": "refine",
+      "label": "Deduplicate and summarize audit findings",
+      "tool": "qs-claws___refine",
+      "parameters": {
+        "run_id": "{{steps.excavate.outputs.run_id}}",
+        "operations": ["dedupe", "rank", "summarize"],
+        "top_k": 500
+      },
+      "outputs": {
+        "refined_run_id": "$.run_id",
+        "summary": "$.summary"
+      }
+    },
+    {
+      "id": "export",
+      "label": "Export with provenance chain for compliance",
+      "tool": "qs-claws___export",
+      "parameters": {
+        "run_id": "{{steps.refine.outputs.refined_run_id}}",
+        "destination": {
+          "type": "s3",
+          "uri": "{{inputs.export_bucket}}/audit-{{context.execution_id}}/results.json"
+        },
+        "include_provenance": true
+      },
+      "outputs": {
+        "export_id": "$.export_id",
+        "destination_uri": "$.destination_uri",
+        "provenance_uri": "$.provenance_uri"
+      }
+    }
+  ],
+  "outputs": {
+    "export_id": "{{steps.export.outputs.export_id}}",
+    "results_uri": "{{steps.export.outputs.destination_uri}}",
+    "provenance_uri": "{{steps.export.outputs.provenance_uri}}",
+    "row_count": "{{steps.excavate.outputs.row_count}}",
+    "summary": "{{steps.refine.outputs.summary}}",
+    "message": "Audit complete. {{steps.excavate.outputs.row_count}} records exported to {{steps.export.outputs.destination_uri}} with provenance at {{steps.export.outputs.provenance_uri}}."
+  }
+}

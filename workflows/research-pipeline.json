@@ -1,0 +1,157 @@
+{
+  "version": "1.0",
+  "name": "Research Pipeline",
+  "description": "End-to-end research workflow: discover a dataset, excavate targeted results, run compute analysis, and surface findings via Quick Research.",
+  "mcp_gateway": "qs-agentcore-gateway",
+  "triggers": [
+    {
+      "type": "manual",
+      "label": "Run Research Pipeline"
+    },
+    {
+      "type": "quick_research",
+      "on": "deep_research_request"
+    }
+  ],
+  "inputs": {
+    "objective": {
+      "type": "string",
+      "description": "Free-text research objective, e.g. 'Analyze 5-year enrollment trends by college for budget planning'"
+    },
+    "domain": {
+      "type": "string",
+      "description": "Data domain to search, e.g. 'enrollment', 'research-awards', 'student-outcomes'"
+    },
+    "profile_id": {
+      "type": "string",
+      "default": "explore-correlations",
+      "description": "Compute profile to apply to excavation results"
+    },
+    "output_dataset_name": {
+      "type": "string",
+      "description": "Name for the resulting Quick Sight dataset"
+    }
+  },
+  "steps": [
+    {
+      "id": "discover",
+      "label": "Discover data sources",
+      "tool": "qs-claws___discover",
+      "parameters": {
+        "domain": "{{inputs.domain}}",
+        "limit": 5
+      },
+      "outputs": {
+        "sources": "$.sources",
+        "source_name": "$.sources[0].name"
+      }
+    },
+    {
+      "id": "probe",
+      "label": "Inspect schema and sample rows",
+      "tool": "qs-claws___probe",
+      "parameters": {
+        "source_name": "{{steps.discover.outputs.source_name}}",
+        "sample_rows": 20
+      },
+      "outputs": {
+        "schema": "$.schema",
+        "pii_fields": "$.pii_fields",
+        "cost_estimate": "$.cost_estimate"
+      }
+    },
+    {
+      "id": "plan",
+      "label": "Generate query plan from objective",
+      "tool": "qs-claws___plan",
+      "parameters": {
+        "objective": "{{inputs.objective}}",
+        "source_name": "{{steps.discover.outputs.source_name}}",
+        "schema": "{{steps.probe.outputs.schema}}"
+      },
+      "outputs": {
+        "plan_id": "$.plan_id",
+        "sql": "$.sql",
+        "estimated_cost_usd": "$.estimated_cost_usd"
+      }
+    },
+    {
+      "id": "excavate",
+      "label": "Execute query",
+      "tool": "qs-claws___excavate",
+      "parameters": {
+        "plan_id": "{{steps.plan.outputs.plan_id}}"
+      },
+      "outputs": {
+        "run_id": "$.run_id",
+        "row_count": "$.row_count"
+      }
+    },
+    {
+      "id": "compute",
+      "label": "Run compute analysis",
+      "tool": "qs-compute___compute_run",
+      "parameters": {
+        "profile_id": "{{inputs.profile_id}}",
+        "source_uri": "claws://claws-{{steps.excavate.outputs.run_id}}",
+        "parameters": {}
+      },
+      "outputs": {
+        "job_id": "$.job_id",
+        "execution_arn": "$.execution_arn"
+      }
+    },
+    {
+      "id": "wait_compute",
+      "label": "Wait for compute job",
+      "tool": "qs-compute___compute_status",
+      "parameters": {
+        "job_id": "{{steps.compute.outputs.job_id}}"
+      },
+      "poll": {
+        "interval_seconds": 15,
+        "until": "$.status == 'succeeded' || $.status == 'failed'",
+        "timeout_seconds": 3600
+      },
+      "outputs": {
+        "result_dataset_name": "$.result_dataset_name",
+        "actual_cost_usd": "$.actual_cost_usd"
+      }
+    },
+    {
+      "id": "export",
+      "label": "Export excavation results to Quick Sight",
+      "tool": "qs-claws___export",
+      "parameters": {
+        "run_id": "{{steps.excavate.outputs.run_id}}",
+        "destination": {
+          "type": "quicksight",
+          "uri": "quicksight://{{inputs.output_dataset_name}}"
+        },
+        "include_provenance": true
+      },
+      "outputs": {
+        "export_id": "$.export_id",
+        "dataset_id": "$.dataset_id"
+      }
+    },
+    {
+      "id": "research_summary",
+      "label": "Generate research narrative",
+      "tool": "qs-router___research",
+      "parameters": {
+        "prompt": "Summarize the key findings from this analysis: objective='{{inputs.objective}}', rows_analyzed={{steps.excavate.outputs.row_count}}, dataset='{{steps.export.outputs.dataset_id}}'. The compute job ran profile '{{inputs.profile_id}}' and produced '{{steps.wait_compute.outputs.result_dataset_name}}'.",
+        "max_tokens": 2048
+      },
+      "outputs": {
+        "summary": "$.content"
+      }
+    }
+  ],
+  "outputs": {
+    "summary": "{{steps.research_summary.outputs.summary}}",
+    "raw_dataset_id": "{{steps.export.outputs.dataset_id}}",
+    "compute_dataset_name": "{{steps.wait_compute.outputs.result_dataset_name}}",
+    "total_cost_usd": "{{steps.wait_compute.outputs.actual_cost_usd}}"
+  }
+}
