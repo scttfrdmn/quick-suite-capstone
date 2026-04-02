@@ -137,27 +137,35 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.5.0
+### quick-suite-data ✅ v0.6.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
-Five AgentCore Lambda tools + three internal Lambdas.
+Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 
 **Tool Lambdas:**
-- `roda_search` — tag-based GSI query + keyword ranking + `exclude_deprecated` filter + pagination
+- `roda_search` — tag-based GSI query + keyword ranking + `exclude_deprecated` filter + pagination; `quality_score` (freshness/schema_completeness/last_verified) on every result
 - `roda_load` (dataset-loader) — load RODA public dataset → Quick Sight dataset; writes `ClawsLookupTable`
-- `s3_browse` — browse configured institutional S3 sources
+- `s3_browse` — browse configured institutional S3 sources; reads from `qs-data-source-registry` when `use_source_registry=true`
 - `s3_preview` — sample rows + schema inference from S3 file
 - `s3_load` — register S3 path as Quick Sight data source; multi-prefix support; writes `ClawsLookupTable`
+- `snowflake_browse` — list tables in a Snowflake data source (SQL API v2, no vendor SDK)
+- `snowflake_preview` — sample rows + schema from a Snowflake table
+- `redshift_browse` — list tables in a Redshift Serverless workgroup (Redshift Data API)
+- `redshift_preview` — sample rows + schema from a Redshift table
+- `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift); keyword scoring; `data_classification_filter`; `skipped_sources`
 
 **Internal Lambdas:**
 - `catalog-sync` — syncs RODA NDJSON catalog into DynamoDB daily (+ SNS real-time)
-- `catalog-quality-check` — weekly EventBridge rule; flags stale datasets (`last_updated` > 2yr), emits `StaleDatasets` CW metric; alarm at > 10 stale
+- `catalog-quality-check` — weekly scan; flags stale/unreachable datasets; writes `last_verified` + `quality_score` to catalog items; emits `StaleDatasets`/`UnreachableDatasets` CW metrics
 - `claws-resolver` — resolves `claws://` source URIs to Quick Sight dataset IDs via `ClawsLookupTable`
+- `register-source` — writes entries to `qs-data-source-registry` DynamoDB table
 
-**ClawsLookupTable:** DynamoDB table (`source_id` PK → `dataset_id`). Written by `roda_load` (`roda-{slug}`) and `s3_load` (`s3-{label}`). Read by `claws-resolver`. Enables clAWS bridge between Open Data and Compute.
+**ClawsLookupTable:** DynamoDB table (`source_id` PK → `dataset_id`). Written by `roda_load` and `s3_load`. Read by `claws-resolver`. Enables clAWS bridge between Open Data and Compute.
 
-Full test suite (111 unit + integration tests via Substrate).
+**Source Registry:** `qs-data-source-registry` DynamoDB table. SSM param `/quick-suite/data/source-registry-arn` for clAWS catalog-aware discover integration (v1.0.0).
+
+Full test suite (192 unit tests; moto + Substrate).
 
 ---
 
