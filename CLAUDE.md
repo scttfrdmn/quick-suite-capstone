@@ -116,7 +116,7 @@ def handler(event, context):
 
 ## Project Status
 
-### quick-suite-router ✅ v0.5.0
+### quick-suite-router ✅ v0.6.0
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
@@ -133,7 +133,8 @@ direct, Google Gemini direct.
 - DynamoDB response cache (configurable TTL, temperature ≤ 0.3 only)
 - Cognito OAuth client_credentials for AgentCore Gateway
 - CloudWatch dashboard with per-provider token/latency/guardrail metrics
-- Full test suite (75 unit tests); cfn-lint + CDK synth in PR-blocking CI job
+- SSE streaming for `generate` and `research` tools (`stream: true` flag); buffered-streaming pattern returns `chunks` list + assembled `content`; all four providers supported; guardrails applied to assembled text
+- Full test suite (123 unit tests); cfn-lint + CDK synth in PR-blocking CI job
 
 ---
 
@@ -163,25 +164,33 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 
 **ClawsLookupTable:** DynamoDB table (`source_id` PK → `dataset_id`). Written by `roda_load` and `s3_load`. Read by `claws-resolver`. Enables clAWS bridge between Open Data and Compute.
 
-**Source Registry:** `qs-data-source-registry` DynamoDB table. SSM param `/quick-suite/data/source-registry-arn` for clAWS catalog-aware discover integration (v1.0.0).
+**Source Registry:** `qs-data-source-registry` DynamoDB table. SSM param `/quick-suite/data/source-registry-arn` for clAWS catalog-aware discover integration (v0.10.0).
 
 Full test suite (192 unit tests; moto + Substrate).
 
 ---
 
-### quick-suite-claws ✅ v0.6.0
+### quick-suite-claws ✅ v0.10.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
-Six AgentCore tool Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
+Eight AgentCore tool Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
 
 **Tool Lambdas:**
-- `discover` — find data sources in approved domains (Glue catalog search)
+- `discover` — find data sources in approved domains (Glue catalog search + `registry` domain queries `qs-data-source-registry`)
 - `probe` — inspect schema, sample rows, cost estimates; PII scan on samples
-- `plan` — translate free-text objective → concrete query (LLM + Guardrails); returns SQL + cost estimate + schema
-- `excavate` — execute exact query from plan (Athena, OpenSearch DSL, S3 Select, MCP); plan_id validation prevents bait-and-switch
+- `plan` — translate free-text objective → concrete query (LLM + Guardrails); stores `team_id` and `created_by` on plan
+- `excavate` — execute exact query from plan; principal must be owner or in `shared_with`; plan_id validation prevents bait-and-switch
 - `refine` — dedupe, rank, summarize results with grounding guardrail
 - `export` — materialize to S3/EventBridge with provenance chain
+- `team_plans` — list all plans for a given `team_id` (read-only summaries)
+- `share_plan` — owner grants read/excavate access to other principals via `shared_with` list
+
+**v0.10.0 collaboration features:**
+- `team_id` stored on plans and denormalized to watches at watch creation
+- `claws.watches` accepts `team_id_filter` (additive with `status_filter`/`source_id_filter`)
+- Catalog-aware discover: `domain: "registry"` queries `qs-data-source-registry` (from quick-suite-data v0.6.0); returns `data_classification` and `quality_score` alongside Glue results
+- Cedar policy additions: `team_plans` action (team members); `plan.share` action (own plans only)
 
 **Safety layers (two independent):**
 - Cedar (AgentCore Policy) — structural/deterministic at Gateway boundary
@@ -189,24 +198,30 @@ Six AgentCore tool Lambdas + Cedar policies + Bedrock Guardrail configs + CDK st
 
 **Core principle:** LLM reasoning never happens inside a tool. `plan` is the only tool with free-text input; `excavate` takes the concrete plan verbatim.
 
-Full test suite (155 tests: Substrate integration + pure unit). MCP executor for extensibility.
+Full test suite (200 tests: Substrate integration + pure unit). MCP executor for extensibility.
 
 ---
 
-### quick-suite-compute ✅ v0.5.0
+### quick-suite-compute ✅ v0.6.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
-Three AgentCore Lambda tools + Step Functions workflow + 10 analysis profiles.
+Seven AgentCore Lambda tools + Step Functions workflow + 10 analysis profiles.
 
 **Tool Lambdas:**
 - `compute_profiles` — list available profiles with parameters, cost, and duration estimates
-- `compute_run` — validate params against profile schema, check monthly budget, start Step Functions execution
-- `compute_status` — poll status; SUCCEEDED response enriched with `actual_cost_usd`, `duration_seconds`, `profile_id` from HistoryTable `by-execution-arn` GSI
+- `compute_run` — validate params against profile schema, check monthly budget, start Step Functions execution; returns `estimated_cost_usd` + `estimated_duration_seconds` pre-submission; accepts `result_label` (snapshot) and `chain_profile_id` (profile composition)
+- `compute_status` — poll status; SUCCEEDED response enriched with `actual_cost_usd`, `duration_seconds`, `profile_id`; shows `step: "profile_2"` for chained jobs
+- `compute_history` — list recent jobs for a user
+- `compute_cancel` — abort a running job
+- `compute_snapshots` — list a user's named result snapshots sorted by completion time
+- `compute_compare` — diff two named snapshots: added/removed/unchanged row counts + schema diff
 
 **Step Functions workflow:** CheckBudget → ExtractDataset → RouteCompute (Lambda or EMR Serverless) → DeliverResults → RecordSpend → NotifyUser
 
 **clAWS URI support in extract Lambda:** `claws://roda-noaa-ghcn` → invoke `CLAWS_RESOLVER_ARN` Lambda → get `dataset_id` → extract via Quick Sight path. Wired via `claws_resolver_arn` CDK context var.
+
+**Snapshots table:** `qs-compute-snapshots` DynamoDB table (PK: `user_arn`, SK: `label`). Written by `record-spend` when `result_label` is set. Read by `compute_snapshots` and `compute_compare`.
 
 **10 Analysis Profiles (Lambda unless noted):**
 clustering-kmeans, regression-glm, forecast-prophet, retention-cohort,
@@ -215,7 +230,7 @@ explore-correlations, geo-enrich (Census API), survival-kaplan-meier
 
 **Dashboard:** Per-profile Cost (USD/24h) and Duration (p99) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (145 unit tests); Substrate integration in CI.
+Full test suite (182 unit tests); Substrate integration in CI.
 
 ---
 
