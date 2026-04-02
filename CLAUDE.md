@@ -244,6 +244,19 @@ Each sub-project has its own milestones, labels, and project board.
 All release planning happens via milestones. Changelogs follow keepachangelog,
 versions follow semver 2.0.
 
+## Substrate (Test Infrastructure)
+
+Integration tests across all sub-projects run against
+[Substrate](https://github.com/scttfrdmn/substrate) — a local AWS emulator
+built and cloned in CI from that repo.
+
+**Do NOT modify Substrate source directly when working in this monorepo.**
+If you encounter a bug or missing feature in Substrate (e.g. a service not
+emulated, wrong response format, missing operation), file an issue at
+https://github.com/scttfrdmn/substrate/issues with a clear description of
+the expected vs actual behavior. Do not apply fixes to `~/src/substrate/`
+as a workaround.
+
 ## Important Notes
 
 - **Model router does NOT need tool-use.** AgentCore handles it.
