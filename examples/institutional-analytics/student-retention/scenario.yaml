@@ -1,0 +1,134 @@
+name: student-retention
+display_name: "First-to-Second Year Retention by Cohort and Pell Status"
+description: |
+  Retention analyst queries the institutional Student Information System (SIS)
+  via clAWS (Athena), excavates first-to-second year retention records by
+  cohort and Pell grant status, runs a cohort retention analysis in
+  quick-suite-compute, and exports results to S3 for accreditation reporting.
+category: institutional-analytics
+requires:
+  stacks: [claws, compute]
+  setup: |
+    Requires an institutional Athena table with the following schema:
+      student_id       (string)  — anonymized student identifier
+      entry_term       (string)  — e.g. "2022-Fall"
+      re_enrolled_date (date)    — date of re-enrollment in second year; NULL if not retained
+      pell_recipient   (boolean) — true if student received Pell grant in entry term
+      degree_program   (string)  — CIP-level program code or label
+
+    Register the table in your AWS Glue catalog and note the source_id in the
+    format: athena:{database}.{table} (e.g. athena:sis_prod.retention_cohorts).
+    The clAWS approved-domains config must include the "athena" domain for this
+    table's database.
+
+steps:
+  - id: discover
+    tool: claws-discover
+    stack: claws
+    description: "Find SIS retention table in approved Athena sources"
+    input:
+      domains: ["athena"]
+      keywords: ["retention", "enrollment", "student", "cohort"]
+    assert:
+      - path: "sources"
+        op: exists
+      - path: "sources[0].source_id"
+        op: exists
+
+  - id: probe
+    tool: claws-probe
+    stack: claws
+    description: "Inspect schema and sample rows from the retention table"
+    input:
+      source_id: "{discover.sources[0].source_id}"
+      sample_rows: 10
+    assert:
+      - path: "schema"
+        op: exists
+      - path: "pii_scan.findings"
+        op: exists
+
+  - id: plan
+    tool: claws-plan
+    stack: claws
+    description: "Plan query to extract first-to-second year retention by cohort and Pell status"
+    input:
+      source_id: "{discover.sources[0].source_id}"
+      objective: "Calculate first-to-second year retention rates by entry cohort and Pell grant status"
+      output_columns: ["student_id", "entry_term", "re_enrolled_date", "pell_recipient", "degree_program"]
+    assert:
+      - path: "plan_id"
+        op: exists
+      - path: "status"
+        op: in
+        value: ["ready", "pending_approval"]
+
+  - id: excavate
+    tool: claws-excavate
+    stack: claws
+    description: "Execute the retention query plan"
+    input:
+      plan_id: "{plan.plan_id}"
+    assert:
+      - path: "result_uri"
+        op: exists
+      - path: "row_count"
+        op: exists
+
+  - id: refine
+    tool: claws-refine
+    stack: claws
+    description: "Deduplicate retention records before compute"
+    input:
+      result_uri: "{excavate.result_uri}"
+      operations: ["dedupe"]
+    assert:
+      - path: "refined_uri"
+        op: exists
+
+  - id: export_raw
+    tool: claws-export
+    stack: claws
+    description: "Export refined retention data to S3 for accreditation records"
+    input:
+      result_uri: "{refine.refined_uri}"
+      destination: s3
+      provenance: true
+    assert:
+      - path: "s3_uri"
+        op: exists
+      - path: "provenance_chain"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run retention-cohort analysis on excavated SIS data"
+    input:
+      profile_id: "retention-cohort"
+      dataset_uri: "{refine.refined_uri}"
+      params:
+        student_id_column: student_id
+        cohort_column: entry_term
+        event_date_column: re_enrolled_date
+        period_grain: semester
+        group_by: ["pell_recipient", "degree_program"]
+      result_label: "retention-cohort-pell"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

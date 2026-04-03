@@ -1,0 +1,94 @@
+name: 1000genomes-population-structure
+display_name: "1000 Genomes Population Structure Clustering"
+description: |
+  A bioinformatics researcher clusters 1000 Genomes Project samples by
+  principal component analysis (PCA) scores derived from variant allele
+  frequencies to identify global population structure. The workflow searches
+  RODA for the 1000 Genomes dataset, loads a pre-processed PCA summary table
+  (PC1–PC5 per sample), and runs k-means clustering with k=5 to recover the
+  five major super-population groups (AFR, AMR, EAS, EUR, SAS). Raw VCF
+  processing is assumed to have been completed upstream; this scenario
+  demonstrates the discovery-to-cluster pipeline within Quick Suite.
+category: academic-research
+requires:
+  stacks: [data, compute]
+  setup: "Requires a pre-processed PCA summary table registered as a RODA-compatible S3 path. See README for details."
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Search RODA catalog for 1000 Genomes Project data"
+    input:
+      query: "1000 Genomes Project human genome sequencing population"
+      tags: ["genomics", "human", "population-genetics"]
+      exclude_deprecated: true
+      limit: 5
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+      - path: "total"
+        op: gte
+        value: 1
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load 1000 Genomes PCA summary table into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_name: "1000genomes-pca-summary"
+      data_classification: "public"
+    assert:
+      - path: "status"
+        op: eq
+        value: "created"
+      - path: "quicksight_dataset_id"
+        op: exists
+      - path: "source_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run k-means clustering on PCA components (k=5 super-populations)"
+    input:
+      profile_id: "clustering-kmeans"
+      dataset_uri: "{load.source_uri}"
+      params:
+        k: 5
+        features:
+          - "pc1"
+          - "pc2"
+          - "pc3"
+          - "pc4"
+          - "pc5"
+        standardize: true
+      result_label: "1000genomes-k5-superpopulations"
+      department: "bioinformatics"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for k-means clustering job to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "actual_cost_usd"
+        op: exists
+      - path: "result_uri"
+        op: exists

@@ -1,0 +1,135 @@
+name: course-eval-topics
+display_name: "Course Evaluation Theme Discovery (LDA Topic Modeling)"
+description: |
+  Academic affairs office queries course evaluation open-ended responses stored
+  in S3 via clAWS (S3 Select), runs LDA topic modeling to identify recurring
+  themes across the current academic year, and exports the top topics per
+  department for review by the faculty senate curriculum committee.
+category: institutional-analytics
+requires:
+  stacks: [claws, compute]
+  setup: |
+    Requires course evaluation open-ended responses in S3 as Parquet or CSV
+    files with the following schema:
+      response_id   (string) — unique response identifier
+      course_id     (string) — course section identifier (e.g. "BIO-201-001")
+      department    (string) — academic department code
+      response_text (string) — free-text open-ended response
+      term          (string) — academic term (e.g. "2024-Spring")
+
+    Register the S3 path as a clAWS source in the approved-domains config
+    under the "s3" domain. The path should point to the parent prefix
+    containing term-partitioned files (e.g. s3://evals-bucket/responses/).
+    Responses should be anonymized — no instructor names in response_text —
+    before registration.
+
+steps:
+  - id: discover
+    tool: claws-discover
+    stack: claws
+    description: "Find course evaluation response files in approved S3 sources"
+    input:
+      domains: ["s3"]
+      keywords: ["course", "evaluation", "response", "survey"]
+    assert:
+      - path: "sources"
+        op: exists
+      - path: "sources[0].source_id"
+        op: exists
+
+  - id: plan
+    tool: claws-plan
+    stack: claws
+    description: "Plan query to select current-year open-ended responses with course and department"
+    input:
+      source_id: "{discover.sources[0].source_id}"
+      objective: |
+        Select all course evaluation open-ended responses from the current
+        academic year with course_id and department. Exclude empty or
+        single-word responses. Include the term field for filtering.
+      output_columns:
+        - response_id
+        - course_id
+        - department
+        - response_text
+        - term
+      filters:
+        term: "2024-*"
+    assert:
+      - path: "plan_id"
+        op: exists
+      - path: "status"
+        op: in
+        value: ["ready", "pending_approval"]
+
+  - id: excavate
+    tool: claws-excavate
+    stack: claws
+    description: "Execute the course evaluation response query"
+    input:
+      plan_id: "{plan.plan_id}"
+    assert:
+      - path: "result_uri"
+        op: exists
+      - path: "row_count"
+        op: gte
+        value: 100
+
+  - id: refine
+    tool: claws-refine
+    stack: claws
+    description: "Deduplicate and rank responses before topic modeling"
+    input:
+      result_uri: "{excavate.result_uri}"
+      operations: ["dedupe", "rank"]
+      rank_by: "response_text"
+    assert:
+      - path: "refined_uri"
+        op: exists
+
+  - id: export_for_compute
+    tool: claws-export
+    stack: claws
+    description: "Stage refined responses to S3 for compute input"
+    input:
+      result_uri: "{refine.refined_uri}"
+      destination: s3
+      provenance: true
+    assert:
+      - path: "s3_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run LDA topic modeling across course evaluation responses"
+    input:
+      profile_id: "text-topics"
+      dataset_uri: "{export_for_compute.s3_uri}"
+      params:
+        text_column: response_text
+        num_topics: 12
+        method: LDA
+        min_doc_frequency: 0.02
+        max_doc_frequency: 0.85
+        group_by: department
+        id_column: response_id
+      result_label: "course-eval-topics-2024"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 20
+      max_attempts: 30
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

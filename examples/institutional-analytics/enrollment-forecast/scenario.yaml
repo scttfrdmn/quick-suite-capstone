@@ -1,0 +1,89 @@
+name: enrollment-forecast
+display_name: "Enrollment Headcount Forecast (IPEDS)"
+description: |
+  IR office loads IPEDS enrollment trend data from the Registry of Open Data
+  on AWS (RODA), runs a Prophet time-series model to project headcount 8
+  semesters forward, and routes a summary narrative to the router for a
+  provost-ready budget briefing paragraph.
+category: institutional-analytics
+requires:
+  stacks: [data, compute, router]
+  setup: |
+    No setup required — uses public IPEDS data from RODA.
+
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Find IPEDS enrollment headcount dataset on RODA"
+    input:
+      query: "IPEDS Integrated Postsecondary Education Data System enrollment headcount"
+      max_results: 5
+      exclude_deprecated: true
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load IPEDS enrollment dataset into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_dataset_name: "ipeds-enrollment-headcount"
+    assert:
+      - path: "status"
+        op: eq
+        value: "success"
+      - path: "quicksight_dataset_id"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run Prophet forecast — 8-semester headcount projection"
+    input:
+      profile_id: "forecast-prophet"
+      dataset_uri: "{load.quicksight_dataset_id}"
+      params:
+        date_column: year
+        value_column: total_enrollment
+        forecast_horizon: 8
+        seasonality_mode: multiplicative
+      result_label: "enrollment-forecast-8sem"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+
+  - id: narrative
+    tool: generate
+    stack: router
+    description: "Draft provost-facing headcount forecast summary"
+    input:
+      prompt: |
+        Draft a 2-paragraph headcount forecast summary for the provost's budget
+        presentation, highlighting trend and 95% confidence interval. Use the
+        following forecast data:
+        {status.result_summary}
+      max_tokens: 512
+      temperature: 0.4
+    assert:
+      - path: "content"
+        op: exists

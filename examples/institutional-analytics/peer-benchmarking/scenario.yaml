@@ -1,0 +1,94 @@
+name: peer-benchmarking
+display_name: "Peer Benchmarking — Tuition Revenue per FTE (IPEDS)"
+description: |
+  IR director loads IPEDS finance and enrollment data from RODA, runs a
+  linear regression to benchmark tuition revenue per FTE against a national
+  peer group, and routes results to the model router for board-ready talking
+  points comparing the institution's position in the peer distribution.
+category: institutional-analytics
+requires:
+  stacks: [data, compute, router]
+  setup: |
+    No setup required — uses public IPEDS data from RODA.
+
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Find IPEDS finance and revenue dataset on RODA"
+    input:
+      query: "IPEDS finance revenue expenditure per-FTE tuition enrollment selectivity"
+      max_results: 5
+      exclude_deprecated: true
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load IPEDS finance dataset into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_dataset_name: "ipeds-finance-per-fte"
+    assert:
+      - path: "status"
+        op: eq
+        value: "success"
+      - path: "quicksight_dataset_id"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run linear regression benchmarking tuition revenue per FTE against peer features"
+    input:
+      profile_id: "regression-glm"
+      dataset_uri: "{load.quicksight_dataset_id}"
+      params:
+        model_type: linear
+        target_column: tuition_revenue_per_fte
+        features:
+          - total_enrollment
+          - selectivity_rate
+          - endowment_per_fte
+          - pct_pell
+        include_interactions: false
+        output_residuals: true
+      result_label: "peer-benchmark-tuition-fte"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+
+  - id: talking_points
+    tool: analyze
+    stack: router
+    description: "Draft board presentation talking points from peer benchmark results"
+    input:
+      prompt: |
+        Identify where our institution falls in the peer distribution for tuition
+        revenue per FTE and draft 3 bullet points for a board presentation. Use
+        the following regression results and residual analysis:
+        {status.result_summary}
+      max_tokens: 400
+      temperature: 0.3
+    assert:
+      - path: "content"
+        op: exists

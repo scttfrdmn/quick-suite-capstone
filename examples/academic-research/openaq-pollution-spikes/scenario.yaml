@@ -1,0 +1,89 @@
+name: openaq-pollution-spikes
+display_name: "OpenAQ Air Quality Anomaly Detection"
+description: |
+  An environmental scientist loads OpenAQ air quality monitoring data from
+  the Registry of Open Data on AWS, then runs an isolation forest anomaly
+  detection model to flag pollution spike events. The contamination parameter
+  (5%) targets the rarest measurement extremes — episodes likely caused by
+  wildfires, industrial accidents, or sensor faults. The returned anomaly
+  scores enable downstream temporal pattern investigation to determine when
+  and where spikes cluster.
+category: academic-research
+requires:
+  stacks: [data, compute]
+  setup: "No setup required — uses public RODA data."
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Search RODA catalog for OpenAQ air quality monitoring data"
+    input:
+      query: "OpenAQ air quality monitoring measurements"
+      tags: ["air-quality", "environment", "openaq", "pollution"]
+      exclude_deprecated: true
+      limit: 5
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+      - path: "total"
+        op: gte
+        value: 1
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load OpenAQ measurements dataset into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_name: "openaq-measurements"
+      data_classification: "public"
+    assert:
+      - path: "status"
+        op: eq
+        value: "created"
+      - path: "quicksight_dataset_id"
+        op: exists
+      - path: "source_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run isolation forest to flag pollution spike anomalies (contamination=5%)"
+    input:
+      profile_id: "anomaly-isolation-forest"
+      dataset_uri: "{load.source_uri}"
+      params:
+        features:
+          - "value"
+        contamination: 0.05
+        return_scores: true
+      result_label: "openaq-pollution-spikes"
+      department: "environmental-science"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for anomaly detection job to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "actual_cost_usd"
+        op: exists
+      - path: "result_uri"
+        op: exists

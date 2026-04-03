@@ -1,0 +1,130 @@
+name: gbif-species-range-shift
+display_name: "GBIF Species Range Shift Detection"
+description: |
+  An ecologist loads GBIF species occurrence data from RODA, enriches
+  observation records with Census American Community Survey geographic
+  variables (population density, median household income) to characterize
+  the landscape context of each occurrence, then runs a Spearman correlation
+  analysis to detect whether observed latitude is shifting northward over
+  time — a key signal of climate-driven range shifts. Two compute steps run
+  in sequence: geo-enrich first, then explore-correlations on the enriched
+  output.
+category: academic-research
+requires:
+  stacks: [data, compute]
+  setup: "No setup required — uses public RODA data."
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Search RODA catalog for GBIF species occurrence data"
+    input:
+      query: "GBIF species occurrence biodiversity"
+      tags: ["biodiversity", "species", "gbif", "ecology"]
+      exclude_deprecated: true
+      limit: 5
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+      - path: "total"
+        op: gte
+        value: 1
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load GBIF occurrence dataset into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_name: "gbif-occurrences"
+      data_classification: "public"
+    assert:
+      - path: "status"
+        op: eq
+        value: "created"
+      - path: "quicksight_dataset_id"
+        op: exists
+      - path: "source_uri"
+        op: exists
+
+  - id: enrich
+    tool: compute_run
+    stack: compute
+    description: "Geo-enrich occurrence records with ACS census variables"
+    input:
+      profile_id: "geo-enrich"
+      dataset_uri: "{load.source_uri}"
+      params:
+        lat_column: "decimalLatitude"
+        lon_column: "decimalLongitude"
+        enrichment_source: "ACS_5year"
+        variables:
+          - "median_household_income"
+          - "population_density"
+      result_label: "gbif-acs-enriched"
+      department: "ecology"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: enrich_status
+    tool: compute_status
+    stack: compute
+    description: "Wait for geo-enrichment job to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{enrich.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "result_uri"
+        op: exists
+
+  - id: correlate
+    tool: compute_run
+    stack: compute
+    description: "Run Spearman correlations to detect northward range shift over time"
+    input:
+      profile_id: "explore-correlations"
+      dataset_uri: "{enrich_status.result_uri}"
+      params:
+        features:
+          - "decimalLatitude"
+          - "year"
+          - "elevation"
+        method: "spearman"
+        top_n: 5
+      result_label: "gbif-range-shift-correlations"
+      department: "ecology"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for correlation analysis to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{correlate.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "actual_cost_usd"
+        op: exists
+      - path: "result_uri"
+        op: exists

@@ -1,0 +1,120 @@
+name: donor-segmentation
+display_name: "Alumni Donor Segmentation (K-Means)"
+description: |
+  Advancement analytics team queries the alumni giving database via clAWS
+  (Athena), excavates five-year giving history, runs K-means clustering to
+  segment donors into four groups based on recency, frequency, and monetary
+  signals, and exports segment assignments for the major gifts team's portfolio
+  review.
+category: institutional-analytics
+requires:
+  stacks: [claws, compute]
+  setup: |
+    Requires an institutional Athena table with the following schema:
+      donor_id          (string)  — anonymized alumni/donor identifier
+      gift_date         (date)    — date of individual gift transaction
+      gift_amount       (double)  — gift amount in USD
+      fund_code         (string)  — fund or designation code
+      solicitation_type (string)  — e.g. "direct_mail", "phone", "major_gifts", "online"
+
+    Register the table in your AWS Glue catalog. The clAWS approved-domains
+    config must include the "athena" domain for this table's database.
+    A minimum of 500 distinct donors is recommended for meaningful k=4
+    segmentation; smaller populations will converge but clusters may be
+    unstable.
+
+steps:
+  - id: plan
+    tool: claws-plan
+    stack: claws
+    description: "Plan query to extract 5-year giving history with RFM signals"
+    input:
+      objective: |
+        Extract the last 5 years of giving history aggregated per donor:
+        donor_id, total_giving, gift_count, years_since_last_gift,
+        largest_single_gift. Filter to donors with at least one gift in the
+        past 5 years. Exclude internal test donor IDs.
+      output_columns:
+        - donor_id
+        - total_giving
+        - gift_count
+        - years_since_last_gift
+        - largest_single_gift
+    assert:
+      - path: "plan_id"
+        op: exists
+      - path: "status"
+        op: in
+        value: ["ready", "pending_approval"]
+
+  - id: excavate
+    tool: claws-excavate
+    stack: claws
+    description: "Execute the giving history aggregation query"
+    input:
+      plan_id: "{plan.plan_id}"
+    assert:
+      - path: "result_uri"
+        op: exists
+      - path: "row_count"
+        op: gte
+        value: 50
+
+  - id: refine
+    tool: claws-refine
+    stack: claws
+    description: "Deduplicate donor records before clustering"
+    input:
+      result_uri: "{excavate.result_uri}"
+      operations: ["dedupe"]
+    assert:
+      - path: "refined_uri"
+        op: exists
+
+  - id: export_segments_input
+    tool: claws-export
+    stack: claws
+    description: "Stage refined giving data to S3 for compute input"
+    input:
+      result_uri: "{refine.refined_uri}"
+      destination: s3
+      provenance: true
+    assert:
+      - path: "s3_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run K-means clustering to segment donors into 4 groups"
+    input:
+      profile_id: "clustering-kmeans"
+      dataset_uri: "{export_segments_input.s3_uri}"
+      params:
+        k: 4
+        features:
+          - total_giving
+          - gift_count
+          - years_since_last_gift
+          - largest_single_gift
+        standardize: true
+        id_column: donor_id
+      result_label: "donor-segments-kmeans-k4"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

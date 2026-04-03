@@ -1,0 +1,105 @@
+name: cdc-health-disparities
+display_name: "CDC PLACES Health Disparities Regression"
+description: |
+  A public health researcher loads CDC PLACES local health measures at the
+  census tract level from RODA, runs a logistic regression modeling social
+  determinants of diabetes prevalence, and then uses the quick-suite-router
+  analyze tool to draft a grant significance section summarizing the key
+  drivers of variation. The workflow illustrates how all three stacks
+  (data, compute, router) compose through AgentCore Gateway without any
+  local infrastructure.
+category: academic-research
+requires:
+  stacks: [data, compute, router]
+  setup: "No setup required — uses public RODA data."
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Search RODA catalog for CDC PLACES local health measures"
+    input:
+      query: "CDC PLACES local health measures census tract"
+      tags: ["health", "cdc", "chronic-disease", "census"]
+      exclude_deprecated: true
+      limit: 5
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+      - path: "total"
+        op: gte
+        value: 1
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load CDC PLACES tract-level health measures into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_name: "cdc-places-tract"
+      data_classification: "public"
+    assert:
+      - path: "status"
+        op: eq
+        value: "created"
+      - path: "quicksight_dataset_id"
+        op: exists
+      - path: "source_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run logistic regression: social determinants predicting diabetes prevalence"
+    input:
+      profile_id: "regression-glm"
+      dataset_uri: "{load.source_uri}"
+      params:
+        model_type: "logistic"
+        target_column: "diabetes_prevalence"
+        features:
+          - "median_income"
+          - "pct_no_insurance"
+          - "pct_poverty"
+          - "pct_obesity"
+        include_interactions: false
+      result_label: "cdc-places-diabetes-sdoh-regression"
+      department: "public-health"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for logistic regression job to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "actual_cost_usd"
+        op: exists
+      - path: "result_uri"
+        op: exists
+
+  - id: narrative
+    tool: analyze
+    stack: router
+    description: "Draft grant significance section summarizing social determinants findings"
+    input:
+      query: "Summarize the key social determinants driving diabetes prevalence variation, suitable for a grant significance section"
+      context: "{status.result_uri}"
+      department: "public-health"
+    assert:
+      - path: "content"
+        op: exists

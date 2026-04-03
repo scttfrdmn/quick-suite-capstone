@@ -142,7 +142,7 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.6.0
+### quick-suite-data ✅ v0.7.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -174,27 +174,30 @@ Full test suite (192 unit tests; moto + Substrate).
 
 ---
 
-### quick-suite-claws ✅ v0.10.0
+### quick-suite-claws ✅ v0.11.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
-Eight AgentCore tool Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
+Eight AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
 
 **Tool Lambdas:**
 - `discover` — find data sources in approved domains (Glue catalog search + `registry` domain queries `qs-data-source-registry`)
 - `probe` — inspect schema, sample rows, cost estimates; PII scan on samples
-- `plan` — translate free-text objective → concrete query (LLM + Guardrails); stores `team_id` and `created_by` on plan
-- `excavate` — execute exact query from plan; principal must be owner or in `shared_with`; plan_id validation prevents bait-and-switch
+- `plan` — translate free-text objective → concrete query (LLM + Guardrails); stores `team_id`, `created_by`, and `status` (`ready` or `pending_approval` when `requires_irb: true`)
+- `excavate` — execute exact query from plan; blocks with `pending_approval` response when plan requires IRB; principal must be owner or in `shared_with`
 - `refine` — dedupe, rank, summarize results with grounding guardrail
 - `export` — materialize to S3/EventBridge with provenance chain
 - `team_plans` — list all plans for a given `team_id` (read-only summaries)
 - `share_plan` — owner grants read/excavate access to other principals via `shared_with` list
 
-**v0.10.0 collaboration features:**
-- `team_id` stored on plans and denormalized to watches at watch creation
-- `claws.watches` accepts `team_id_filter` (additive with `status_filter`/`source_id_filter`)
-- Catalog-aware discover: `domain: "registry"` queries `qs-data-source-registry` (from quick-suite-data v0.6.0); returns `data_classification` and `quality_score` alongside Glue results
-- Cedar policy additions: `team_plans` action (team members); `plan.share` action (own plans only)
+**Internal Lambdas (not AgentCore tools):**
+- `approve_plan` — IRB reviewer approves a `pending_approval` plan; checks `CLAWS_IRB_APPROVERS` allowlist; emits `claws.irb / PlanApproved` EventBridge event; blocks self-approval
+- `audit_export` — scans CloudWatch Logs for audit records in a date range; writes NDJSON to S3 with SHA-256-hashed inputs/outputs (no PII); fields: `principal`, `tool`, `inputs_hash`, `outputs_hash`, `cost_usd`, `guardrail_trace`, `timestamp`
+
+**v0.11.0 compliance features:**
+- IRB workflow: `requires_irb: true` on plan → `status: pending_approval`; `excavate` gates on status; `approve_plan` Lambda + `plan.approve` Cedar action (irb_approver role, no self-approval)
+- FERPA Guardrail preset: `guardrails/ferpa/ferpa_guardrail.json`; five denied topic categories; SSN + student ID regex patterns; deploy with CDK context `enable_ferpa_guardrail: true`
+- Cedar policy templates: `policies/templates/{read-only,no-pii-export,approved-domains-only,phi-approved}.cedar`
 
 **Safety layers (two independent):**
 - Cedar (AgentCore Policy) — structural/deterministic at Gateway boundary
@@ -202,7 +205,7 @@ Eight AgentCore tool Lambdas + Cedar policies + Bedrock Guardrail configs + CDK 
 
 **Core principle:** LLM reasoning never happens inside a tool. `plan` is the only tool with free-text input; `excavate` takes the concrete plan verbatim.
 
-Full test suite (200 tests: Substrate integration + pure unit). MCP executor for extensibility.
+Full test suite (247 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 

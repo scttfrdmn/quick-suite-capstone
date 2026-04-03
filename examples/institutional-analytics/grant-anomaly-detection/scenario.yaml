@@ -1,0 +1,128 @@
+name: grant-anomaly-detection
+display_name: "Sponsored Program Expenditure Anomaly Detection"
+description: |
+  Research office compliance team queries sponsored program expenditure records
+  via clAWS (Athena), runs an Isolation Forest anomaly detection model to flag
+  unusual burn rate patterns that may indicate award misuse or financial risk,
+  and exports flagged grants with anomaly scores for PI and compliance officer
+  review.
+category: institutional-analytics
+requires:
+  stacks: [claws, compute]
+  setup: |
+    Requires a sponsored programs Athena table with the following schema:
+      award_id         (string)  — sponsored award identifier (e.g. grant number)
+      pi_id            (string)  — anonymized principal investigator identifier
+      fiscal_month     (string)  — YYYY-MM format (e.g. "2024-03")
+      expenditure_usd  (double)  — total expenditures for the month in USD
+      total_budget_usd (double)  — total award budget
+      award_end_date   (date)    — award period end date
+
+    Register the table in your AWS Glue catalog. The clAWS approved-domains
+    config must include the "athena" domain for this table's database.
+    The compliance team's principal must have the "read" clAWS Cedar action
+    granted for the sponsored programs domain. Derived columns
+    (monthly_pct_of_budget, days_to_expiration) are computed in the plan
+    query — they do not need to exist in the source table.
+
+steps:
+  - id: plan
+    tool: claws-plan
+    stack: claws
+    description: "Plan query to extract monthly expenditure features for anomaly detection"
+    input:
+      objective: |
+        Extract monthly expenditure records per award with derived risk features:
+        award_id, pi_id, fiscal_month, expenditure_usd, budget_remaining_usd,
+        days_to_expiration. Compute monthly_pct_of_budget as
+        expenditure_usd / total_budget_usd. Compute days_to_expiration as days
+        between fiscal_month and award_end_date. Include only active awards
+        with at least 3 months of expenditure history.
+      output_columns:
+        - award_id
+        - pi_id
+        - fiscal_month
+        - expenditure_usd
+        - budget_remaining_usd
+        - days_to_expiration
+        - monthly_pct_of_budget
+    assert:
+      - path: "plan_id"
+        op: exists
+      - path: "status"
+        op: in
+        value: ["ready", "pending_approval"]
+
+  - id: excavate
+    tool: claws-excavate
+    stack: claws
+    description: "Execute the sponsored expenditure feature query"
+    input:
+      plan_id: "{plan.plan_id}"
+    assert:
+      - path: "result_uri"
+        op: exists
+      - path: "row_count"
+        op: gte
+        value: 50
+
+  - id: refine
+    tool: claws-refine
+    stack: claws
+    description: "Deduplicate expenditure records before anomaly scoring"
+    input:
+      result_uri: "{excavate.result_uri}"
+      operations: ["dedupe"]
+    assert:
+      - path: "refined_uri"
+        op: exists
+
+  - id: export_for_compute
+    tool: claws-export
+    stack: claws
+    description: "Stage refined expenditure data to S3 for anomaly detection compute"
+    input:
+      result_uri: "{refine.refined_uri}"
+      destination: s3
+      provenance: true
+    assert:
+      - path: "s3_uri"
+        op: exists
+      - path: "provenance_chain"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run Isolation Forest anomaly detection on expenditure patterns"
+    input:
+      profile_id: "anomaly-isolation-forest"
+      dataset_uri: "{export_for_compute.s3_uri}"
+      params:
+        features:
+          - monthly_pct_of_budget
+          - days_to_expiration
+          - expenditure_usd
+        contamination: 0.03
+        return_scores: true
+        id_column: award_id
+        group_columns: ["pi_id", "fiscal_month"]
+      result_label: "grant-anomalies-isolation-forest"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

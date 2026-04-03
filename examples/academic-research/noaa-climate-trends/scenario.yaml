@@ -1,0 +1,88 @@
+name: noaa-climate-trends
+display_name: "NOAA GHCN Climate Trend Forecast"
+description: |
+  A climate scientist searches for NOAA Global Historical Climatology Network
+  (GHCN) daily temperature records on the Registry of Open Data on AWS, loads
+  the dataset into Quick Sight, then runs a Prophet time-series forecast to
+  project 24-month maximum temperature trends. The workflow demonstrates how
+  researchers can move from open data discovery to publication-ready forecast
+  output without leaving the Quick Suite environment.
+category: academic-research
+requires:
+  stacks: [data, compute]
+  setup: "No setup required — uses public RODA data."
+steps:
+  - id: search
+    tool: roda_search
+    stack: data
+    description: "Search RODA catalog for NOAA GHCN daily temperature data"
+    input:
+      query: "NOAA Global Historical Climatology Network Daily"
+      tags: ["climate", "weather", "noaa"]
+      exclude_deprecated: true
+      limit: 5
+    assert:
+      - path: "results"
+        op: exists
+      - path: "results[0].dataset_id"
+        op: exists
+      - path: "total"
+        op: gte
+        value: 1
+
+  - id: load
+    tool: roda_load
+    stack: data
+    description: "Load NOAA GHCN daily dataset into Quick Sight"
+    input:
+      dataset_id: "{search.results[0].dataset_id}"
+      target_name: "noaa-ghcn-daily"
+      data_classification: "public"
+    assert:
+      - path: "status"
+        op: eq
+        value: "created"
+      - path: "quicksight_dataset_id"
+        op: exists
+      - path: "source_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run Prophet forecast on 24-month temperature trend"
+    input:
+      profile_id: "forecast-prophet"
+      dataset_uri: "{load.source_uri}"
+      params:
+        date_column: "date"
+        value_column: "tmax"
+        forecast_horizon: 24
+        seasonality_mode: "additive"
+      result_label: "noaa-ghcn-tmax-24mo-forecast"
+      department: "climate-science"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for Prophet forecast job to complete"
+    poll:
+      interval_seconds: 15
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "actual_cost_usd"
+        op: exists
+      - path: "result_uri"
+        op: exists

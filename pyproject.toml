@@ -5,7 +5,7 @@ description = "Cross-project integration tests for Quick Suite Capstone"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
-dependencies = ["boto3>=1.34"]
+dependencies = ["boto3>=1.34", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -22,6 +22,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "integration: cross-project integration tests (require Substrate)",
+    "scenario: end-to-end scenario tests against deployed stacks (require AWS credentials)",
 ]
 
 [tool.ruff]
