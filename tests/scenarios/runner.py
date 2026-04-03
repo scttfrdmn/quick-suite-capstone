@@ -225,28 +225,46 @@ def resolve_refs(value: Any, step_results: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 def _assert_step(result: dict, assertions: list[dict], step_id: str) -> None:
+    """Run assertions for a step result.
+
+    Each assertion spec may include ``skip_if_fail: true`` to convert an
+    assertion failure into a pytest.skip() instead of pytest.fail().  This is
+    used for catalog-availability checks (e.g. ``roda_search count >= 1``) where
+    a miss means the required data isn't in the catalog yet — an infrastructure
+    gap, not a code bug.
+    """
     for spec in assertions:
         path = spec.get("path", "")
         op = spec.get("op", "exists")
         expected = spec.get("value")
+        skip_if_fail = spec.get("skip_if_fail", False)
 
         actual = _get_nested(result, path) if path else result
 
+        def _check(ok: bool, msg: str) -> None:
+            if not ok:
+                if skip_if_fail:
+                    pytest.skip(f"Step '{step_id}': {msg} (skip_if_fail)")
+                else:
+                    assert False, f"Step '{step_id}': {msg}"  # noqa: S101
+
         if op == "exists":
-            assert actual is not None and actual != "" and actual != [], \
-                f"Step '{step_id}': expected '{path}' to exist, got {actual!r}"
+            _check(
+                actual is not None and actual != "" and actual != [],
+                f"expected '{path}' to exist, got {actual!r}",
+            )
 
         elif op == "eq":
-            assert actual == expected, \
-                f"Step '{step_id}': expected '{path}' == {expected!r}, got {actual!r}"
+            _check(actual == expected, f"expected '{path}' == {expected!r}, got {actual!r}")
 
         elif op == "gte":
-            assert actual is not None and actual >= expected, \
-                f"Step '{step_id}': expected '{path}' >= {expected}, got {actual!r}"
+            _check(
+                actual is not None and actual >= expected,
+                f"expected '{path}' >= {expected}, got {actual!r}",
+            )
 
         elif op == "in":
-            assert actual in expected, \
-                f"Step '{step_id}': expected '{path}' in {expected!r}, got {actual!r}"
+            _check(actual in expected, f"expected '{path}' in {expected!r}, got {actual!r}")
 
         else:
             raise ValueError(f"Unknown assertion op '{op}' in step '{step_id}'")

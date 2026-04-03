@@ -336,6 +336,43 @@ class TestAssertStep:
     def test_exists_no_path_passes(self):
         _assert_step({"any": "data"}, [{"op": "exists"}], "s")
 
+    # --- skip_if_fail ---
+
+    def test_skip_if_fail_converts_assert_to_skip(self):
+        """A failing assertion with skip_if_fail=true raises pytest.skip."""
+        with pytest.raises(pytest.skip.Exception):
+            _assert_step(
+                {"count": 0},
+                [{"path": "count", "op": "gte", "value": 1, "skip_if_fail": True}],
+                "search",
+            )
+
+    def test_skip_if_fail_does_not_affect_passing_assertion(self):
+        """skip_if_fail has no effect when the assertion already passes."""
+        _assert_step(
+            {"count": 5},
+            [{"path": "count", "op": "gte", "value": 1, "skip_if_fail": True}],
+            "search",
+        )
+
+    def test_skip_if_fail_false_still_raises_assert_error(self):
+        """Explicit skip_if_fail=false keeps the default fail behaviour."""
+        with pytest.raises(AssertionError):
+            _assert_step(
+                {"count": 0},
+                [{"path": "count", "op": "gte", "value": 1, "skip_if_fail": False}],
+                "search",
+            )
+
+    def test_skip_if_fail_default_false(self):
+        """Omitting skip_if_fail defaults to fail behaviour."""
+        with pytest.raises(AssertionError):
+            _assert_step(
+                {"count": 0},
+                [{"path": "count", "op": "gte", "value": 1}],
+                "search",
+            )
+
 
 # ---------------------------------------------------------------------------
 # 4. ScenarioRunner.run() — mocked AWS
