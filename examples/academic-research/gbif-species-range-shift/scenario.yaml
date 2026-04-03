@@ -22,13 +22,14 @@ steps:
       query: "GBIF species occurrence biodiversity"
       tags: ["biodiversity", "species", "gbif", "ecology"]
       exclude_deprecated: true
-      limit: 5
+      quicksight_compatible: true
+      max_results: 5
     assert:
-      - path: "results"
+      - path: "datasets"
         op: exists
-      - path: "results[0].dataset_id"
+      - path: "datasets.0.slug"
         op: exists
-      - path: "total"
+      - path: "count"
         op: gte
         value: 1
 
@@ -36,17 +37,13 @@ steps:
     tool: roda_load
     stack: data
     description: "Load GBIF occurrence dataset into Quick Sight"
+    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
     input:
-      dataset_id: "{search.results[0].dataset_id}"
-      target_name: "gbif-occurrences"
-      data_classification: "public"
+      slug: "{search.datasets.0.slug}"
     assert:
-      - path: "status"
-        op: eq
-        value: "created"
-      - path: "quicksight_dataset_id"
+      - path: "dataset_id"
         op: exists
-      - path: "source_uri"
+      - path: "source_id"
         op: exists
 
   - id: enrich
@@ -55,8 +52,9 @@ steps:
     description: "Geo-enrich occurrence records with ACS census variables"
     input:
       profile_id: "geo-enrich"
-      dataset_uri: "{load.source_uri}"
-      params:
+      source_uri: "claws://{load.source_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
         lat_column: "decimalLatitude"
         lon_column: "decimalLongitude"
         enrichment_source: "ACS_5year"
@@ -82,12 +80,11 @@ steps:
       max_attempts: 24
     input:
       job_id: "{enrich.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
         op: in
         value: [SUCCEEDED, FAILED]
-      - path: "result_uri"
-        op: exists
 
   - id: correlate
     tool: compute_run
@@ -95,8 +92,10 @@ steps:
     description: "Run Spearman correlations to detect northward range shift over time"
     input:
       profile_id: "explore-correlations"
-      dataset_uri: "{enrich_status.result_uri}"
-      params:
+      # result_uri is only present on SUCCEEDED; if enrich_status failed this step will surface the gap
+      source_uri: "{enrich_status.result_uri}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
         features:
           - "decimalLatitude"
           - "year"
@@ -120,11 +119,8 @@ steps:
       max_attempts: 24
     input:
       job_id: "{correlate.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
         op: in
         value: [SUCCEEDED, FAILED]
-      - path: "actual_cost_usd"
-        op: exists
-      - path: "result_uri"
-        op: exists

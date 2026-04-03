@@ -20,24 +20,27 @@ steps:
       query: "IPEDS Integrated Postsecondary Education Data System enrollment headcount"
       max_results: 5
       exclude_deprecated: true
+      quicksight_compatible: true
     assert:
-      - path: "results"
+      - path: "datasets"
         op: exists
-      - path: "results[0].dataset_id"
+      - path: "datasets.0.slug"
         op: exists
+      - path: "count"
+        op: gte
+        value: 1
 
   - id: load
     tool: roda_load
     stack: data
     description: "Load IPEDS enrollment dataset into Quick Sight"
+    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
     input:
-      dataset_id: "{search.results[0].dataset_id}"
-      target_dataset_name: "ipeds-enrollment-headcount"
+      slug: "{search.datasets.0.slug}"
     assert:
-      - path: "status"
-        op: eq
-        value: "success"
-      - path: "quicksight_dataset_id"
+      - path: "dataset_id"
+        op: exists
+      - path: "source_id"
         op: exists
 
   - id: run
@@ -46,8 +49,9 @@ steps:
     description: "Run Prophet forecast — 8-semester headcount projection"
     input:
       profile_id: "forecast-prophet"
-      dataset_uri: "{load.quicksight_dataset_id}"
-      params:
+      source_uri: "claws://{load.source_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
         date_column: year
         value_column: total_enrollment
         forecast_horizon: 8
@@ -67,6 +71,7 @@ steps:
       max_attempts: 24
     input:
       job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
         op: in

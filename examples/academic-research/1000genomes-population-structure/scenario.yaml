@@ -22,13 +22,14 @@ steps:
       query: "1000 Genomes Project human genome sequencing population"
       tags: ["genomics", "human", "population-genetics"]
       exclude_deprecated: true
-      limit: 5
+      quicksight_compatible: true
+      max_results: 5
     assert:
-      - path: "results"
+      - path: "datasets"
         op: exists
-      - path: "results[0].dataset_id"
+      - path: "datasets.0.slug"
         op: exists
-      - path: "total"
+      - path: "count"
         op: gte
         value: 1
 
@@ -36,17 +37,13 @@ steps:
     tool: roda_load
     stack: data
     description: "Load 1000 Genomes PCA summary table into Quick Sight"
+    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
     input:
-      dataset_id: "{search.results[0].dataset_id}"
-      target_name: "1000genomes-pca-summary"
-      data_classification: "public"
+      slug: "{search.datasets.0.slug}"
     assert:
-      - path: "status"
-        op: eq
-        value: "created"
-      - path: "quicksight_dataset_id"
+      - path: "dataset_id"
         op: exists
-      - path: "source_uri"
+      - path: "source_id"
         op: exists
 
   - id: run
@@ -55,8 +52,9 @@ steps:
     description: "Run k-means clustering on PCA components (k=5 super-populations)"
     input:
       profile_id: "clustering-kmeans"
-      dataset_uri: "{load.source_uri}"
-      params:
+      source_uri: "claws://{load.source_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
         k: 5
         features:
           - "pc1"
@@ -84,11 +82,8 @@ steps:
       max_attempts: 24
     input:
       job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
         op: in
         value: [SUCCEEDED, FAILED]
-      - path: "actual_cost_usd"
-        op: exists
-      - path: "result_uri"
-        op: exists

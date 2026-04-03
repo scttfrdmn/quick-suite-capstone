@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+from botocore.config import Config
 import pytest
 import yaml
 
@@ -255,6 +256,13 @@ def _assert_step(result: dict, assertions: list[dict], step_id: str) -> None:
 # Lambda invocation
 # ---------------------------------------------------------------------------
 
+_LAMBDA_CLIENT_CONFIG = Config(
+    connect_timeout=10,
+    read_timeout=180,   # Lambda max execution = 15 min, but our tools timeout at 3 min
+    retries={"max_attempts": 0},  # no automatic retries — caller handles polling
+)
+
+
 def _invoke_lambda(
     fn_arn: str,
     payload: dict,
@@ -263,7 +271,7 @@ def _invoke_lambda(
     profile: str | None,
 ) -> dict:
     session = boto3.Session(profile_name=profile, region_name=region)
-    lam = session.client("lambda", region_name=region)
+    lam = session.client("lambda", region_name=region, config=_LAMBDA_CLIENT_CONFIG)
     resp = lam.invoke(
         FunctionName=fn_arn,
         InvocationType="RequestResponse",
