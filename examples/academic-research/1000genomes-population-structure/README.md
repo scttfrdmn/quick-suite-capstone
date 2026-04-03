@@ -1,32 +1,37 @@
 # 1000 Genomes Population Structure Clustering
 
-A bioinformatics researcher uses Quick Suite to cluster 1000 Genomes Project
-samples by genomic principal components, recovering the five major
-super-population groups (AFR, AMR, EAS, EUR, SAS) without writing a single
-line of Python. The workflow searches the Registry of Open Data on AWS for
-the 1000 Genomes dataset, loads a PCA summary table, and runs k-means
-clustering (k=5, standardized) using the quick-suite-compute
-`clustering-kmeans` profile.
+**Who runs this:** Bioinformatics researchers, population geneticists, and
+computational biology faculty studying human genetic diversity. This example
+is also relevant for any researcher who needs to validate a clustering
+approach against a dataset with known ground-truth groupings.
 
-**Data source:** 1000 Genomes Project on RODA (`s3://1000genomes/`). The
-project sequenced 2,504 individuals across 26 populations. Raw variant calls
-are large multi-sample VCFs; this example operates on a pre-processed PCA
-summary table with columns `sample_id`, `super_population`, `pc1` through
-`pc5`. PCA computation from raw VCFs (e.g., with PLINK2 or HAIL) is assumed
-to have been run upstream and the result registered as a RODA-accessible S3
-path. The `roda_search` and `roda_load` steps handle the discovery and Quick
-Sight registration of that table.
+**What it does:** Clusters 1000 Genomes Project samples by genomic principal
+components to recover the five major super-population groups (AFR, AMR, EAS,
+EUR, SAS) — without writing a line of Python. A researcher might ask:
+*"Load the 1000 Genomes PCA summary and cluster the samples into five
+population groups."* Quick Suite finds the dataset on RODA, loads it, and
+runs k-means (k=5, standardized) to produce cluster assignments per sample.
 
-**Output:** A Parquet file at `result_uri` with each sample's assigned
-cluster label (`cluster_id`), distance to centroid, and the original PC
-columns. The named snapshot `1000genomes-k5-superpopulations` is stored in
-`qs-compute-snapshots` and can be compared against future runs (e.g., with
-different k) via `compute_compare`.
+Because k-means on PCA components is a well-validated approach for population
+stratification, this scenario also serves as a sanity check for the clustering
+profile itself: if the five clusters don't correspond roughly to the known
+super-populations, something is wrong with the input data or the preprocessing.
 
-**Prerequisites:** A pre-processed PCA summary table must be registered in
-RODA or accessible via an S3 path that `roda_load` can reach. The raw 1000
-Genomes VCF files on RODA are publicly available but require VCF-to-PCA
-preprocessing before this workflow begins. Research computing staff can
-register the PCA output path using the quick-suite-data `register-source`
-internal Lambda. No IRB approval is required — 1000 Genomes data is publicly
-consented for research use.
+**Data:** 1000 Genomes Project on RODA (`s3://1000genomes/`). The project
+sequenced 2,504 individuals across 26 populations from five continental
+super-populations. This workflow operates on a **pre-processed PCA summary
+table** with columns `sample_id`, `super_population`, and `pc1` through `pc5`.
+The raw variant calls (multi-sample VCFs) are large and require PCA
+preprocessing with tools like PLINK2 or HAIL before this workflow begins;
+register the PCA output as a RODA-accessible path using the quick-suite-data
+`register-source` Lambda. No IRB approval is required — 1000 Genomes data is
+publicly consented for research use.
+
+**Output:** A Parquet file at `result_uri` with each sample's `cluster_id`,
+distance to centroid, and original PC columns. The named snapshot
+`1000genomes-k5-superpopulations` enables re-running with different k values
+and comparing results via `compute_compare` — useful for determining optimal k
+on novel datasets where ground truth is unknown.
+
+**Prerequisites:** A PCA summary table registered as a RODA-accessible S3
+path (see Data section above). Stacks required: `data`, `compute`.

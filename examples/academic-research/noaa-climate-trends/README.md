@@ -1,28 +1,30 @@
-# NOAA GHCN Climate Trend Forecast
+# NOAA Climate Trends Forecast
 
-A climate scientist searches the Registry of Open Data on AWS for NOAA Global
-Historical Climatology Network (GHCN) daily temperature records, loads the
-dataset into Quick Sight, and runs a Prophet time-series forecast projecting
-maximum daily temperature 24 months into the future. The full workflow runs
-in Quick Suite using two stacks — quick-suite-data for data discovery and
-loading, and quick-suite-compute for the forecast — without requiring any
-local compute or data transfer.
+**Who runs this:** Climate scientists, atmospheric researchers, and
+environmental science faculty who want to apply time-series forecasting to
+NOAA station records without managing local compute or writing a data pipeline.
 
-**Data source:** NOAA GHCN Daily on RODA (`s3://noaa-ghcn-pds/`). Contains
-global station observations from 1763 to present, updated daily. Key columns
-used: `date` (YYYYMMDD), `tmax` (maximum temperature in tenths of a degree C).
-The `forecast-prophet` compute profile fits a Facebook Prophet model with
-additive seasonality and returns a 24-month forward projection with 80%
-and 95% confidence intervals.
+**What it does:** Searches the Registry of Open Data on AWS for the NOAA
+Global Historical Climatology Network (GHCN) daily temperature dataset,
+loads it into Quick Sight, and runs a Prophet time-series forecast projecting
+maximum daily temperature 24 months forward. A Quick Suite user might ask:
+*"Pull NOAA climate data for a station and project temperature trends for the
+next two years."* This workflow is what happens behind the scenes.
 
-**Output:** A Parquet result file at the `result_uri` returned by
-`compute_status`. Columns include `ds` (date), `yhat` (point forecast),
-`yhat_lower`, `yhat_upper`, and the decomposed trend and seasonality
-components. The named snapshot `noaa-ghcn-tmax-24mo-forecast` is
-retrievable via `compute_snapshots` for comparison runs.
+**Data:** NOAA GHCN Daily on RODA (`s3://noaa-ghcn-pds/`). Over 100,000
+global weather stations, observations from 1763 to present, updated daily.
+The forecast uses `date` (YYYYMMDD) and `tmax` (maximum temperature in tenths
+of a degree C). The Prophet model fits with additive seasonality — appropriate
+for climate data where seasonal amplitude is relatively constant — and returns
+a 24-month forward projection.
 
-**Prerequisites:** None. NOAA GHCN Daily is a public dataset on RODA with no
-access controls. Quick Suite users need compute access to the
-`forecast-prophet` profile and a department tag for spend tracking
-(`department: "climate-science"` in the run step). Forecast job typically
-completes in 3-5 minutes for a single-station subset.
+**Output:** A Parquet file at `result_uri` containing `ds` (date), `yhat`
+(point forecast), `yhat_lower`, `yhat_upper`, and decomposed trend and
+seasonality components. The named snapshot `noaa-ghcn-tmax-24mo-forecast` is
+stored in `qs-compute-snapshots` for later retrieval or comparison via
+`compute_compare`. Forecast jobs on a single-station subset typically complete
+in 3–5 minutes.
+
+**Prerequisites:** None. NOAA GHCN Daily is a public dataset with no access
+controls. Set a `department` tag in the run step for spend tracking (e.g.,
+`department: "climate-science"`). Stacks required: `data`, `compute`.
