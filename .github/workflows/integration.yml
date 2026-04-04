@@ -24,6 +24,13 @@ jobs:
       - name: Install base dependencies
         run: uv sync --extra dev --no-install-project
 
+      - name: Clone sub-projects
+        run: |
+          git clone https://github.com/scttfrdmn/quick-suite-claws.git quick-suite-claws
+          git clone https://github.com/scttfrdmn/quick-suite-compute.git quick-suite-compute
+          git clone https://github.com/scttfrdmn/quick-suite-data.git quick-suite-data
+          git clone https://github.com/scttfrdmn/quick-suite-router.git quick-suite-router
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
