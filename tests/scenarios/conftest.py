@@ -8,7 +8,8 @@ Required environment:
   AWS_PROFILE=aws  (or other standard AWS credential env vars)
 
 Optional environment:
-  QS_SCENARIO_REGION   AWS region (default: us-east-1)
+  QS_SCENARIO_REGION   AWS region for data/compute stacks (default: us-west-2)
+                       router and claws stacks always use us-east-1 (per-stack override)
   QS_SCENARIO_PROFILE  AWS profile (default: $AWS_PROFILE or None)
 
 Run all scenarios:
@@ -27,7 +28,7 @@ import pytest
 
 from tests.scenarios.runner import ScenarioRunner, discover_scenarios
 
-REGION = os.environ.get("QS_SCENARIO_REGION", "us-east-1")
+REGION = os.environ.get("QS_SCENARIO_REGION", "us-west-2")
 PROFILE = os.environ.get("QS_SCENARIO_PROFILE") or os.environ.get("AWS_PROFILE")
 
 

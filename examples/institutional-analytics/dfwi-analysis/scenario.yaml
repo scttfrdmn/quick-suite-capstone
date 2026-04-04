@@ -1,0 +1,54 @@
+name: dfwi-analysis
+display_name: "DFWI Rate Analysis by Course and Department"
+description: |
+  IR analyst or faculty affairs office computes DFWI (D/F/W/I grade) rates
+  from a synthetic grade roster loaded directly from S3. The dfwi-analysis
+  profile flags DFWI grades, computes rates by course and department, and
+  returns a summary suitable for equity-minded course review or accreditation
+  reporting.
+category: institutional-analytics
+requires:
+  stacks: [compute]
+  setup: |
+    Demo data available at:
+      s3://claws-runs-942542972736/demo-data/dfwi_demo.csv
+    Schema: student_id, course_id, course_name, department, section,
+            grade, term, instructor_id.
+    Synthetic data: 5000 grade records across 40 courses in 8 departments.
+    Grade distribution approximates a realistic DFWI rate of ~18% overall.
+
+steps:
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Compute DFWI rates by course and department"
+    input:
+      profile_id: "dfwi-analysis"
+      source_uri: "s3://claws-runs-942542972736/demo-data/dfwi_demo.csv"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        grade_column: grade
+        dfwi_values: ["D", "F", "W", "I"]
+        group_by:
+          - department
+          - course_id
+      result_label: "dfwi-by-course-dept"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 10
+      max_attempts: 18
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

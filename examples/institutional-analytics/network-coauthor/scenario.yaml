@@ -1,0 +1,127 @@
+name: network-coauthor
+display_name: "Faculty Co-authorship Network — Centrality and Community Detection"
+description: |
+  Research office analyst discovers the institutional publication database via
+  clAWS, extracts author and publication-ID fields, and runs the network-coauthor
+  compute profile to build a weighted co-authorship graph. Output includes degree
+  and betweenness centrality per author and Louvain community assignments — useful
+  for identifying interdisciplinary bridges, isolated researchers, and collaboration
+  clusters for strategic faculty development initiatives.
+category: institutional-analytics
+requires:
+  stacks: [claws, compute]
+  setup: |
+    Demo data expected in Glue catalog: a publications table with at minimum
+    columns: pub_id (string), authors (semicolon-delimited string), pub_year (int).
+    A synthetic fixture can be loaded from:
+      s3://claws-runs-942542972736/demo-data/faculty_publications.csv
+
+steps:
+  - id: discover
+    tool: claws-discover
+    stack: claws
+    description: "Find faculty publications table in Glue catalog"
+    input:
+      query: "faculty publications authors coauthorship"
+      scope:
+        domains: ["athena"]
+    assert:
+      - path: "sources"
+        op: exists
+      - path: "sources.0.id"
+        op: exists
+
+  - id: probe
+    tool: claws-probe
+    stack: claws
+    description: "Inspect schema of publications table"
+    input:
+      source_id: "{discover.sources.0.id}"
+      mode: schema_only
+    assert:
+      - path: "schema"
+        op: exists
+
+  - id: plan
+    tool: claws-plan
+    stack: claws
+    description: "Plan query to extract publication ID and author list"
+    input:
+      source_id: "{discover.sources.0.id}"
+      objective: |
+        Extract pub_id and authors columns for all publications.
+        The authors column is a semicolon-delimited list of author names.
+      output_columns:
+        - pub_id
+        - authors
+    assert:
+      - path: "plan_id"
+        op: exists
+      - path: "status"
+        op: in
+        value: ["ready", "pending_approval"]
+
+  - id: excavate
+    tool: claws-excavate
+    stack: claws
+    description: "Execute publications query"
+    input:
+      plan_id: "{plan.plan_id}"
+      source_id: "{discover.sources.0.id}"
+      query: "{plan.steps.0.input.query}"
+      query_type: "{plan.steps.0.input.query_type}"
+    assert:
+      - path: "result_uri"
+        op: exists
+      - path: "rows_returned"
+        op: gte
+        value: 1
+
+  - id: export_for_compute
+    tool: claws-export
+    stack: claws
+    description: "Stage publication data to S3 for network analysis"
+    input:
+      run_id: "{excavate.run_id}"
+      destination:
+        type: s3
+        uri: "s3://claws-runs-942542972736/demo-exports/network-coauthor/"
+      include_provenance: true
+    assert:
+      - path: "destination_uri"
+        op: exists
+
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Build co-authorship network and compute centrality metrics"
+    input:
+      profile_id: "network-coauthor"
+      source_uri: "{export_for_compute.destination_uri}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        author_column: authors
+        publication_id_column: pub_id
+        author_separator: ";"
+        min_collaborations: 2
+      result_label: "faculty-coauthor-network"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for network analysis to complete"
+    poll:
+      interval_seconds: 20
+      max_attempts: 18
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

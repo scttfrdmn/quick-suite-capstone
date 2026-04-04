@@ -1,11 +1,13 @@
 name: cdc-health-disparities
 display_name: "CDC PLACES Health Disparities Regression"
 description: |
-  A public health researcher loads CDC PLACES local health measures at the
-  census tract level from RODA, runs a logistic regression modeling social
-  determinants of diabetes prevalence, and then uses the quick-suite-router
-  analyze tool to draft a grant significance section summarizing the key
-  drivers of variation. The workflow illustrates how all three stacks
+  A public health researcher searches for CDC PLACES local health measures
+  on the Registry of Open Data on AWS, runs a logistic regression modeling
+  social determinants of diabetes prevalence directly against the public CDC
+  S3 dataset, and then uses the quick-suite-router analyze tool to draft a
+  grant significance section summarizing the key drivers of variation. The
+  compute layer reads CDC BRFSS prevalence data directly from S3, bypassing
+  the Quick Sight loading step. The workflow illustrates how all three stacks
   (data, compute, router) compose through AgentCore Gateway without any
   local infrastructure.
 category: academic-research
@@ -25,27 +27,10 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
-
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load CDC PLACES tract-level health measures into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
 
   - id: run
     tool: compute_run
@@ -53,7 +38,7 @@ steps:
     description: "Run logistic regression: social determinants predicting diabetes prevalence"
     input:
       profile_id: "regression-glm"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://cdc-brfss-annual-prevalence-data/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         model_type: "logistic"
@@ -94,9 +79,11 @@ steps:
     stack: router
     description: "Draft grant significance section summarizing social determinants findings"
     input:
-      query: "Summarize the key social determinants driving diabetes prevalence variation, suitable for a grant significance section"
+      prompt: "Summarize the key social determinants driving diabetes prevalence variation, suitable for a grant significance section"
       context: "{status.job_id}"
       department: "public-health"
+      max_tokens: 400
+      temperature: 0.3
     assert:
       - path: "content"
         op: exists

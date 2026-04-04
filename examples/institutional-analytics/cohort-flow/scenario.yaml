@@ -1,0 +1,57 @@
+name: cohort-flow
+display_name: "Admissions Funnel Cohort Flow Analysis"
+description: |
+  Enrollment management analyst tracks a prospect cohort from inquiry through
+  enrollment using a synthetic admissions funnel dataset loaded directly from
+  S3. The cohort-flow profile computes stage-by-stage conversion rates and
+  assigns each student the furthest stage they reached, enabling funnel
+  visualization and yield strategy planning.
+category: institutional-analytics
+requires:
+  stacks: [compute]
+  setup: |
+    Demo data available at:
+      s3://claws-runs-942542972736/demo-data/cohort_flow_demo.csv
+    Schema: student_id, stage, stage_date, recruited_by, state, program_interest.
+    Synthetic data: 3000 students across 5 funnel stages (inquiry, applied,
+    admitted, deposited, enrolled). Each student may appear in multiple rows
+    (one per stage they reached).
+
+steps:
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run cohort flow analysis on admissions funnel data"
+    input:
+      profile_id: "cohort-flow"
+      source_uri: "s3://claws-runs-942542972736/demo-data/cohort_flow_demo.csv"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        id_column: student_id
+        stage_column: stage
+        stage_order:
+          - inquiry
+          - applied
+          - admitted
+          - deposited
+          - enrolled
+      result_label: "admissions-funnel-flow"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 10
+      max_attempts: 18
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

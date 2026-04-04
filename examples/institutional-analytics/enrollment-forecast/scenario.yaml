@@ -1,9 +1,11 @@
 name: enrollment-forecast
 display_name: "Enrollment Headcount Forecast (IPEDS)"
 description: |
-  IR office loads IPEDS enrollment trend data from the Registry of Open Data
-  on AWS (RODA), runs a Prophet time-series model to project headcount 8
-  semesters forward, and routes a summary narrative to the router for a
+  IR office searches for IPEDS enrollment trend data on the Registry of Open
+  Data on AWS, then runs a Prophet time-series model to project headcount 8
+  semesters forward. The compute layer reads institutional enrollment data
+  directly from the public NCES S3 dataset, bypassing the Quick Sight loading
+  step. A narrative summary is routed through the model router for a
   provost-ready budget briefing paragraph.
 category: institutional-analytics
 requires:
@@ -23,27 +25,10 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
-
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load IPEDS enrollment dataset into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
 
   - id: run
     tool: compute_run
@@ -51,7 +36,7 @@ steps:
     description: "Run Prophet forecast — 8-semester headcount projection"
     input:
       profile_id: "forecast-prophet"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://nces-ipeds-data/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         date_column: year

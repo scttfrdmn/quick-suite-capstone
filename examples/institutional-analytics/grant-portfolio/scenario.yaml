@@ -1,25 +1,25 @@
-name: donor-segmentation
-display_name: "Alumni Donor Segmentation (K-Means)"
+name: grant-portfolio
+display_name: "Research Grant Portfolio — Burn Rate and NCE Risk Analysis"
 description: |
-  Advancement analytics team discovers alumni giving history via clAWS
-  (Glue/Athena), excavates five-year giving records, runs K-means clustering
-  to segment donors into four groups based on recency, frequency, and monetary
-  signals, and exports segment assignments for the major gifts team's portfolio
-  review.
+  Research office analyst pulls sponsored program expenditure records via
+  clAWS (Glue/Athena), runs the grant-portfolio compute profile to compute
+  per-award burn rates and flag awards approaching no-cost extension (NCE)
+  territory, and delivers a PI-level summary for post-award review. Demonstrates
+  the full clAWS → Compute pipeline for sponsored programs analytics.
 category: institutional-analytics
 requires:
   stacks: [claws, compute]
   setup: |
-    Demo data pre-loaded: claws_demo.donor_giving_history in us-east-1 Glue catalog.
-    Schema: donor_id, gift_date, gift_amount, fund_code, solicitation_type.
+    Demo data pre-loaded: claws_demo.sponsored_program_expenditures in us-east-1 Glue catalog.
+    Schema: award_id, pi_id, fiscal_month, expenditure_usd, total_budget_usd, award_end_date.
 
 steps:
   - id: discover
     tool: claws-discover
     stack: claws
-    description: "Find alumni donor giving history table in Glue catalog"
+    description: "Find sponsored program expenditure table in Glue catalog"
     input:
-      query: "donor gift alumni giving history"
+      query: "sponsored program expenditure award"
       scope:
         domains: ["athena"]
     assert:
@@ -31,7 +31,7 @@ steps:
   - id: probe
     tool: claws-probe
     stack: claws
-    description: "Inspect schema of donor giving history table"
+    description: "Inspect schema of expenditure table"
     input:
       source_id: "{discover.sources.0.id}"
       mode: schema_only
@@ -42,19 +42,20 @@ steps:
   - id: plan
     tool: claws-plan
     stack: claws
-    description: "Plan query to extract 5-year giving history with RFM signals"
+    description: "Plan query to extract all expenditure records for burn rate analysis"
     input:
       source_id: "{discover.sources.0.id}"
       objective: |
-        Extract giving records from the last 5 years: donor_id, gift_date,
-        gift_amount, fund_code, solicitation_type. Include all donors with at
-        least one gift. Order by donor_id.
+        Extract all sponsored program transaction records:
+        award_id, pi_id, fiscal_month, expenditure_usd, total_budget_usd, award_end_date.
+        Include only records where expenditure_usd > 0.
       output_columns:
-        - donor_id
-        - gift_date
-        - gift_amount
-        - fund_code
-        - solicitation_type
+        - award_id
+        - pi_id
+        - fiscal_month
+        - expenditure_usd
+        - total_budget_usd
+        - award_end_date
     assert:
       - path: "plan_id"
         op: exists
@@ -65,7 +66,7 @@ steps:
   - id: excavate
     tool: claws-excavate
     stack: claws
-    description: "Execute the giving history query"
+    description: "Execute expenditure query"
     input:
       plan_id: "{plan.plan_id}"
       source_id: "{discover.sources.0.id}"
@@ -81,7 +82,7 @@ steps:
   - id: refine
     tool: claws-refine
     stack: claws
-    description: "Deduplicate donor records before clustering"
+    description: "Deduplicate expenditure records"
     input:
       run_id: "{excavate.run_id}"
       operations: ["dedupe"]
@@ -89,36 +90,38 @@ steps:
       - path: "refined_uri"
         op: exists
 
-  - id: export_segments_input
+  - id: export_for_compute
     tool: claws-export
     stack: claws
-    description: "Stage refined giving data to S3 for compute input"
+    description: "Stage refined expenditure data to S3 for grant-portfolio compute"
     input:
       run_id: "{refine.run_id}"
       destination:
         type: s3
-        uri: "s3://claws-runs-942542972736/demo-exports/donor-segmentation/"
+        uri: "s3://claws-runs-942542972736/demo-exports/grant-portfolio/"
       include_provenance: true
     assert:
       - path: "destination_uri"
+        op: exists
+      - path: "provenance_uri"
         op: exists
 
   - id: run
     tool: compute_run
     stack: compute
-    description: "Run K-means clustering to segment donors into 4 groups"
+    description: "Run grant-portfolio burn rate and NCE risk analysis"
     input:
-      profile_id: "clustering-kmeans"
-      source_uri: "{export_segments_input.destination_uri}"
+      profile_id: "grant-portfolio"
+      source_uri: "{export_for_compute.destination_uri}"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
-        k: 4
-        features:
-          - gift_amount
-          - fund_code
-        standardize: true
-        id_column: donor_id
-      result_label: "donor-segments-kmeans-k4"
+        amount_column: expenditure_usd
+        budget_column: total_budget_usd
+        date_column: fiscal_month
+        award_id_column: award_id
+        pi_column: pi_id
+        nce_threshold: 0.90
+      result_label: "grant-portfolio-nce-risk"
     assert:
       - path: "job_id"
         op: exists
@@ -128,6 +131,7 @@ steps:
   - id: status
     tool: compute_status
     stack: compute
+    description: "Wait for grant-portfolio analysis to complete"
     poll:
       interval_seconds: 15
       max_attempts: 24

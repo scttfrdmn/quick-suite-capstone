@@ -34,12 +34,23 @@ import yaml
 STACK_NAMES: dict[str, str] = {
     "data": "QuickSuiteOpenData",
     "compute": "QuickSuiteCompute",
-    "router": "QuickSuiteRouter",
+    "router": "QuickSuiteModelRouter",
     "claws": "ClawsToolsStack",
 }
 
+# Per-stack region overrides (unset = use runner default region)
+STACK_REGIONS: dict[str, str] = {
+    "router": "us-east-1",  # model router deploys to us-east-1
+    "claws": "us-east-1",   # claws deploys to us-east-1
+}
+
 # Stacks that return plain JSON (not API Gateway envelope)
-_PLAIN_JSON_STACKS = {"data", "compute", "router"}
+_PLAIN_JSON_STACKS = {"data", "compute"}
+
+# Stacks with a single shared Lambda for all tools (value = function name)
+_STACK_SINGLE_LAMBDA: dict[str, str] = {
+    "router": "qs-model-router-router",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -102,11 +113,17 @@ def _cfn_outputs(stack_name: str, region: str, profile: str | None) -> dict[str,
     return _cfn_cache[key]
 
 
+def _stack_region(stack_key: str, default_region: str) -> str:
+    """Return the effective region for a stack, respecting per-stack overrides."""
+    return STACK_REGIONS.get(stack_key, default_region)
+
+
 def stack_deployed(stack_key: str, region: str, profile: str | None) -> bool:
     stack_name = STACK_NAMES.get(stack_key)
     if not stack_name:
         return False
-    outputs = _cfn_outputs(stack_name, region, profile)
+    effective_region = _stack_region(stack_key, region)
+    outputs = _cfn_outputs(stack_name, effective_region, profile)
     return bool(outputs)
 
 
@@ -120,6 +137,7 @@ def _resolve_arn(
     """Return the Lambda ARN for a tool in a given stack.
 
     Strategies (tried in order):
+    0. Single-Lambda stacks (_STACK_SINGLE_LAMBDA) — one Lambda handles all tools
     1. ToolArns JSON blob in CFN outputs (data + compute stacks)
     2. Individual {ToolName}FunctionArn CFN output (claws stack)
     3. Naming convention: {prefix}-{tool} Lambda function name
@@ -128,7 +146,20 @@ def _resolve_arn(
     if not stack_name:
         return None
 
-    outputs = _cfn_outputs(stack_name, region, profile)
+    effective_region = _stack_region(stack_key, region)
+
+    # Strategy 0: single shared Lambda for all tools in this stack (e.g. router)
+    if stack_key in _STACK_SINGLE_LAMBDA:
+        fn_name = _STACK_SINGLE_LAMBDA[stack_key]
+        session = boto3.Session(profile_name=profile, region_name=effective_region)
+        lam = session.client("lambda", region_name=effective_region)
+        try:
+            resp = lam.get_function(FunctionName=fn_name)
+            return resp["Configuration"]["FunctionArn"]
+        except Exception:
+            return None
+
+    outputs = _cfn_outputs(stack_name, effective_region, profile)
 
     # Strategy 1: ToolArns JSON blob
     if "ToolArns" in outputs:
@@ -150,14 +181,13 @@ def _resolve_arn(
     prefixes = {
         "data": "qs-data-",
         "compute": "qs-compute-",
-        "router": "qs-router-",
         "claws": "",
     }
     prefix = prefixes.get(stack_key, "")
     fn_name = f"{prefix}{tool.replace('_', '-')}"
 
-    session = boto3.Session(profile_name=profile, region_name=region)
-    lam = session.client("lambda", region_name=region)
+    session = boto3.Session(profile_name=profile, region_name=effective_region)
+    lam = session.client("lambda", region_name=effective_region)
     try:
         resp = lam.get_function(FunctionName=fn_name)
         return resp["Configuration"]["FunctionArn"]
@@ -287,9 +317,20 @@ def _invoke_lambda(
     stack_key: str,
     region: str,
     profile: str | None,
+    tool: str = "",
 ) -> dict:
-    session = boto3.Session(profile_name=profile, region_name=region)
-    lam = session.client("lambda", region_name=region, config=_LAMBDA_CLIENT_CONFIG)
+    effective_region = _stack_region(stack_key, region)
+
+    # router stack: wrap payload in API Gateway event format
+    if stack_key == "router":
+        payload = {
+            "httpMethod": "POST",
+            "tool": tool,
+            "body": json.dumps(payload),
+        }
+
+    session = boto3.Session(profile_name=profile, region_name=effective_region)
+    lam = session.client("lambda", region_name=effective_region, config=_LAMBDA_CLIENT_CONFIG)
     resp = lam.invoke(
         FunctionName=fn_arn,
         InvocationType="RequestResponse",
@@ -300,7 +341,7 @@ def _invoke_lambda(
     if resp.get("FunctionError"):
         raise RuntimeError(f"Lambda FunctionError: {raw}")
 
-    # claws stack wraps response in API Gateway envelope
+    # claws and router stacks wrap response in API Gateway envelope
     if stack_key not in _PLAIN_JSON_STACKS:
         body = raw.get("body", "{}")
         return json.loads(body) if isinstance(body, str) else raw
@@ -355,10 +396,10 @@ class ScenarioRunner:
             if poll_cfg:
                 result = self._poll(
                     fn_arn, resolved_input, stack_key,
-                    assertions, step_id, poll_cfg,
+                    assertions, step_id, poll_cfg, tool,
                 )
             else:
-                result = _invoke_lambda(fn_arn, resolved_input, stack_key, self.region, self.profile)
+                result = _invoke_lambda(fn_arn, resolved_input, stack_key, self.region, self.profile, tool)
                 if assertions:
                     _assert_step(result, assertions, step_id)
 
@@ -372,13 +413,14 @@ class ScenarioRunner:
         assertions: list[dict],
         step_id: str,
         poll_cfg: dict,
+        tool: str = "",
     ) -> dict:
         interval = poll_cfg.get("interval_seconds", 15)
         max_attempts = poll_cfg.get("max_attempts", 20)
 
         result: dict = {}
         for attempt in range(max_attempts):
-            result = _invoke_lambda(fn_arn, payload, stack_key, self.region, self.profile)
+            result = _invoke_lambda(fn_arn, payload, stack_key, self.region, self.profile, tool)
             # Check if assertions are satisfied (polling stops on success or terminal state)
             try:
                 if assertions:

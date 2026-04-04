@@ -1,0 +1,64 @@
+{
+  "name": "grant-expenditure-audit",
+  "display_name": "Grant Expenditure Anomaly Audit",
+  "description": "Detects anomalous transactions in sponsored program accounts using Isolation Forest. Flags outliers by award type and budget period for sponsor closeout review or internal audit. Works with transaction data exported from your financial system to S3.",
+  "category": "institutional-analytics",
+  "stacks_required": ["compute"],
+  "inputs": [
+    {
+      "id": "source_uri",
+      "label": "Transaction Data (S3 path)",
+      "type": "string",
+      "description": "S3 URI to a CSV with columns: transaction_id, amount, object_code, award_type, days_into_period, department.",
+      "example": "s3://my-bucket/sponsored-program-transactions.csv"
+    },
+    {
+      "id": "feature_columns",
+      "label": "Feature Columns for Anomaly Detection",
+      "type": "string_list",
+      "default": ["amount", "days_into_period"],
+      "description": "Numeric columns to use for anomaly scoring."
+    },
+    {
+      "id": "contamination",
+      "label": "Expected Anomaly Rate",
+      "type": "float",
+      "default": 0.05,
+      "description": "Estimated fraction of anomalous transactions (0.01–0.20). Use 0.05 for a general audit."
+    },
+    {
+      "id": "user_arn",
+      "label": "User ARN",
+      "type": "string",
+      "example": "arn:aws:iam::123456789012:user/compliance-officer"
+    }
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "tool": "compute_run",
+      "description": "Run Isolation Forest anomaly detection on grant transactions",
+      "profile_id": "anomaly-isolation-forest",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.features": "feature_columns",
+        "parameters.contamination": "contamination",
+        "parameters.return_scores": {"value": true}
+      },
+      "result_label": "grant-anomaly-audit"
+    },
+    {
+      "order": 2,
+      "tool": "compute_status",
+      "description": "Wait for anomaly detection to complete",
+      "poll": {"interval_seconds": 10, "max_attempts": 18}
+    }
+  ],
+  "outputs": [
+    {
+      "step": 2,
+      "description": "Transactions with is_anomaly (boolean) and anomaly_score; flagged rows sorted by score for review"
+    }
+  ]
+}

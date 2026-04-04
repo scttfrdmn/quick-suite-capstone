@@ -1,0 +1,60 @@
+name: pdf-sentiment-pipeline
+display_name: "PDF Document Ingest → Sentiment Analysis Pipeline"
+description: |
+  A policy analyst ingests a PDF document stored in S3 (e.g. an accreditation
+  self-study, NIH grant narrative, or institutional strategic plan) using the
+  ingest-pdf-extract profile, which produces one row per page with extracted
+  text. The result is immediately chained into the text-sentiment profile to
+  score each page as positive, negative, or neutral using VADER. Demonstrates
+  a pure-compute ingest-to-analytics chain: no clAWS excavation step required
+  when the source document is already in S3.
+category: academic-research
+requires:
+  stacks: [compute]
+  setup: |
+    Demo PDF file available at:
+      s3://claws-runs-942542972736/demo-data/policy_docs.pdf
+    Any multi-page PDF with substantial text per page will work.
+    Pages shorter than 100 characters are automatically filtered.
+
+steps:
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Extract text from PDF pages and chain into VADER sentiment scoring"
+    input:
+      profile_id: "ingest-pdf-extract"
+      source_uri: "s3://claws-runs-942542972736/demo-data/policy_docs.pdf"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        min_page_length: 100
+        include_page_numbers: true
+      chain_profile_id: "text-sentiment"
+      chain_parameters:
+        text_column: text
+        output_scores: true
+      result_label: "policy-doc-sentiment-by-page"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for PDF ingest + sentiment analysis chain to complete"
+    poll:
+      interval_seconds: 10
+      max_attempts: 18
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "step"
+        op: in
+        value: ["profile_1", "profile_2", null]
+        skip_if_fail: true

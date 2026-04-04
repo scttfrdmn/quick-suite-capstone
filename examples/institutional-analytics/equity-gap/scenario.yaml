@@ -1,0 +1,54 @@
+name: equity-gap
+display_name: "Equity Gap Analysis by Demographic Group"
+description: |
+  IR analyst runs equity gap analysis on student outcome data loaded from a
+  synthetic S3 fixture. The equity-gap profile computes group-level means and
+  equity indices relative to a reference group, surfacing which demographic
+  subgroups fall below the institutional benchmark. Results are returned
+  directly to Quick Suite for dashboard delivery.
+category: institutional-analytics
+requires:
+  stacks: [compute]
+  setup: |
+    Demo data available at:
+      s3://claws-runs-942542972736/demo-data/equity_gap_demo.csv
+    Schema: student_id, gpa, pell_recipient (yes/no), first_gen (yes/no),
+            urm (yes/no), degree_program, entry_term.
+    Synthetic data: 2000 rows across 4 degree programs, 3 demographic dimensions.
+
+steps:
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Run equity gap analysis on student GPA by Pell and first-gen status"
+    input:
+      profile_id: "equity-gap"
+      source_uri: "s3://claws-runs-942542972736/demo-data/equity_gap_demo.csv"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        metric_column: gpa
+        group_columns:
+          - pell_recipient
+          - first_gen
+        reference_group: "no"
+        min_group_size: 30
+      result_label: "equity-gap-gpa-pell-firstgen"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    poll:
+      interval_seconds: 10
+      max_attempts: 18
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]

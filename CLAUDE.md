@@ -209,11 +209,11 @@ Full test suite (247 tests: Substrate integration + pure unit). MCP executor for
 
 ---
 
-### quick-suite-compute ✅ v0.8.0
+### quick-suite-compute ✅ v0.12.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
-Seven AgentCore Lambda tools + Step Functions workflow + 10 analysis profiles.
+Seven AgentCore Lambda tools + Step Functions workflow + 31 analysis profiles across 11 categories.
 
 **Tool Lambdas:**
 - `compute_profiles` — list available profiles with parameters, cost, and duration estimates
@@ -238,14 +238,24 @@ Seven AgentCore Lambda tools + Step Functions workflow + 10 analysis profiles.
 
 **Router spend integration (Issue #23):** `compute_run` reads `qs-router-spend` (the quick-suite-router's spend ledger) via `ROUTER_SPEND_TABLE` env var (set from `router_spend_table_arn` CDK context); blocks jobs if department cumulative spend + estimated cost exceeds `MONTHLY_BUDGET_USD`; fails open on AWS errors.
 
-**10 Analysis Profiles (Lambda unless noted):**
-clustering-kmeans, regression-glm, forecast-prophet, retention-cohort,
-text-topics, anomaly-isolation-forest, transform-spark (EMR Serverless),
-explore-correlations, geo-enrich (Census API), survival-kaplan-meier
+**31 Analysis Profiles (Lambda unless noted):**
+Statistics: anova, chi-square
+Prediction/ML: regression-glm, regression-logistic, classification-random-forest
+Forecasting: forecast-prophet, change-detection, seasonality-decompose
+Clustering: clustering-kmeans
+Text: text-topics, text-sentiment, text-similarity
+Anomaly: anomaly-isolation-forest
+Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier
+Geospatial: geo-enrich (Census API), isochrone, spatial-aggregate
+Exploration: explore-correlations
+Research: grant-portfolio, network-coauthor
+Ingest: ingest-netcdf, ingest-pdf-extract, ingest-geojson
+Custom: custom-python (RestrictedPython sandbox), custom-generated (LLM-generated code)
+Transform: transform-spark (EMR Serverless)
 
-**Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json` (Issue #25).
+**Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (213 unit tests); Substrate integration in CI.
+Full test suite (421 unit tests); Substrate integration in CI.
 
 ---
 
@@ -281,6 +291,50 @@ tracking to CLAUDE.md files or create TODO.md files.
 Each sub-project has its own milestones, labels, and project board.
 All release planning happens via milestones. Changelogs follow keepachangelog,
 versions follow semver 2.0.
+
+## Scenario Tests (`tests/scenarios/`)
+
+Cross-stack E2E tests driven by `examples/**/scenario.yaml` files. Each scenario
+invokes real deployed Lambda functions and asserts on the responses.
+
+**Run:**
+```bash
+AWS_PROFILE=aws python3 -m pytest tests/scenarios/test_scenarios.py -v
+```
+
+**Region:** `QS_SCENARIO_REGION` defaults to `us-west-2` (where data/compute stacks
+live). Router and claws always resolve to `us-east-1` via per-stack overrides in the
+runner — do not change this.
+
+**Skips vs failures:** A skip means a required stack is not deployed (expected in CI
+without full infra). A failure means the pipeline itself is broken.
+
+**Scenario authoring rules:**
+
+1. **Never use `roda_load` as a pipeline step.** It creates persistent QuickSight
+   resources that need cleanup. Use `source_uri: "s3://..."` directly in `compute_run`.
+
+2. **Probe before plan.** `plan` reads from a schema cache populated by `probe`.
+   Without probe, plan generates SQL with no column context.
+
+3. **Compute profile enums are lowercase:** `method: lda` not `method: LDA`.
+   The compute Lambda validates strictly and returns an error immediately on mismatch.
+
+4. **clAWS field names are exact — wrong names silently produce empty results:**
+   - discover input: `query:` (not `keywords:`), `scope: {domains: [...]}` (not top-level)
+   - discover output: `sources[].id` (not `sources[].source_id`)
+   - excavate needs all four fields: `plan_id`, `source_id`, `query`, `query_type`
+   - Plan query path: `plan.steps.0.input.query` (nested under `input`, not `plan.steps.0.query`)
+   - refine input: `run_id:` (not `result_uri:`)
+   - export input: `destination: {type: s3, uri: "..."}`, `include_provenance: true`
+   - export output: `destination_uri` (not `s3_uri`)
+   - compute input: `source_uri:` (not `dataset_uri:`), `parameters:` (not `params:`)
+
+5. **clAWS demo data is infrastructure.** The four `claws_demo.*` Glue tables
+   (`course_evaluations`, `student_retention_cohorts`, `donor_giving_history`,
+   `sponsored_program_expenditures`) must be pre-seeded in us-east-1 before
+   institutional-analytics scenarios will pass. They're not created by the test suite.
+   See `tests/scenarios/README.md` for the S3 locations.
 
 ## Substrate (Test Infrastructure)
 

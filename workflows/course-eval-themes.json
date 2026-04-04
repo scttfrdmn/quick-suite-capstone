@@ -1,0 +1,102 @@
+{
+  "name": "course-eval-themes",
+  "display_name": "Course Evaluation Theme & Sentiment Analysis",
+  "description": "Extracts themes from course evaluation open-ended responses using topic modeling, then scores each response as positive, negative, or neutral using VADER sentiment analysis. Enables faculty affairs and program review offices to process thousands of responses without manual reading.",
+  "category": "institutional-analytics",
+  "stacks_required": ["compute"],
+  "inputs": [
+    {
+      "id": "source_uri",
+      "label": "Course Evaluation Responses (S3 path)",
+      "type": "string",
+      "description": "S3 URI to a CSV with at minimum a text column of open-ended responses.",
+      "example": "s3://my-bucket/course-eval-responses.csv"
+    },
+    {
+      "id": "text_column",
+      "label": "Response Text Column",
+      "type": "string",
+      "default": "response_text",
+      "description": "Column containing the open-ended response text."
+    },
+    {
+      "id": "num_topics",
+      "label": "Number of Themes",
+      "type": "integer",
+      "default": 8,
+      "description": "Number of topics to extract (2–30). Use 6–10 for a typical course evaluation set."
+    },
+    {
+      "id": "topic_method",
+      "label": "Topic Modeling Method",
+      "type": "enum",
+      "values": ["lda", "nmf"],
+      "default": "lda",
+      "description": "LDA is probabilistic and interpretable; NMF tends to produce sharper topic boundaries."
+    },
+    {
+      "id": "output_sentiment_scores",
+      "label": "Include Detailed Sentiment Scores",
+      "type": "boolean",
+      "default": false,
+      "description": "If true, adds pos_score, neg_score, neu_score, compound_score columns in addition to the sentiment label."
+    },
+    {
+      "id": "user_arn",
+      "label": "User ARN",
+      "type": "string",
+      "example": "arn:aws:iam::123456789012:user/faculty-researcher"
+    }
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "tool": "compute_run",
+      "description": "Extract themes from open-ended responses",
+      "profile_id": "text-topics",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.text_column": "text_column",
+        "parameters.num_topics": "num_topics",
+        "parameters.method": "topic_method"
+      },
+      "result_label": "eval-topics"
+    },
+    {
+      "order": 2,
+      "tool": "compute_status",
+      "description": "Wait for topic modeling to complete",
+      "poll": {"interval_seconds": 20, "max_attempts": 18}
+    },
+    {
+      "order": 3,
+      "tool": "compute_run",
+      "description": "Score sentiment of each response",
+      "profile_id": "text-sentiment",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.text_column": "text_column",
+        "parameters.output_scores": "output_sentiment_scores"
+      },
+      "result_label": "eval-sentiment"
+    },
+    {
+      "order": 4,
+      "tool": "compute_status",
+      "description": "Wait for sentiment analysis to complete",
+      "poll": {"interval_seconds": 10, "max_attempts": 18}
+    }
+  ],
+  "outputs": [
+    {
+      "step": 2,
+      "description": "Responses tagged with dominant_topic (0-indexed) and topic_probability; topic-term matrix in diagnostics"
+    },
+    {
+      "step": 4,
+      "description": "Responses scored as positive/negative/neutral with compound sentiment score"
+    }
+  ]
+}

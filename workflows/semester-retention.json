@@ -1,0 +1,116 @@
+{
+  "name": "semester-retention",
+  "display_name": "Semester Retention & Equity Gap Report",
+  "description": "Runs cohort retention analysis and equity gap analysis on a student dataset. Produces a semester-by-semester retention matrix and equity indices by demographic group. For IPEDS reporting, accreditation self-studies, and equity-minded program review.",
+  "category": "institutional-analytics",
+  "stacks_required": ["compute"],
+  "inputs": [
+    {
+      "id": "source_uri",
+      "label": "Student Data (S3 path)",
+      "type": "string",
+      "description": "S3 URI to a CSV with columns: student_id, cohort (entry term), re_enrolled_date, demographic columns (e.g. pell_recipient, first_gen).",
+      "example": "s3://my-bucket/student-outcomes.csv"
+    },
+    {
+      "id": "student_id_column",
+      "label": "Student ID Column",
+      "type": "string",
+      "default": "student_id"
+    },
+    {
+      "id": "cohort_column",
+      "label": "Cohort Column",
+      "type": "string",
+      "default": "entry_term",
+      "description": "Column identifying entry cohort (e.g. 'Fall 2021')."
+    },
+    {
+      "id": "event_date_column",
+      "label": "Re-enrollment Date Column",
+      "type": "string",
+      "default": "re_enrolled_date"
+    },
+    {
+      "id": "equity_metric_column",
+      "label": "Equity Metric Column",
+      "type": "string",
+      "default": "gpa",
+      "description": "Numeric outcome to measure equity gaps across (e.g. GPA, credits earned)."
+    },
+    {
+      "id": "group_columns",
+      "label": "Demographic Group Columns",
+      "type": "string_list",
+      "default": ["pell_recipient", "first_gen"],
+      "description": "Columns defining demographic subgroups for equity gap analysis."
+    },
+    {
+      "id": "reference_group",
+      "label": "Reference Group Value",
+      "type": "string",
+      "default": "no",
+      "description": "Value in group columns representing the reference (e.g. 'no' for non-Pell)."
+    },
+    {
+      "id": "user_arn",
+      "label": "User ARN",
+      "type": "string",
+      "description": "AWS IAM ARN of the requesting user for budget tracking.",
+      "example": "arn:aws:iam::123456789012:user/ir-analyst"
+    }
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "tool": "compute_run",
+      "description": "Run cohort retention analysis",
+      "profile_id": "retention-cohort",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.student_id_column": "student_id_column",
+        "parameters.cohort_column": "cohort_column",
+        "parameters.event_date_column": "event_date_column",
+        "parameters.period_grain": {"value": "semester"}
+      },
+      "result_label": "retention-cohort-semester"
+    },
+    {
+      "order": 2,
+      "tool": "compute_status",
+      "description": "Wait for retention analysis to complete",
+      "poll": {"interval_seconds": 15, "max_attempts": 24}
+    },
+    {
+      "order": 3,
+      "tool": "compute_run",
+      "description": "Run equity gap analysis on the same dataset",
+      "profile_id": "equity-gap",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.metric_column": "equity_metric_column",
+        "parameters.group_columns": "group_columns",
+        "parameters.reference_group": "reference_group"
+      },
+      "result_label": "equity-gap-semester"
+    },
+    {
+      "order": 4,
+      "tool": "compute_status",
+      "description": "Wait for equity gap analysis to complete",
+      "poll": {"interval_seconds": 10, "max_attempts": 18}
+    }
+  ],
+  "outputs": [
+    {
+      "step": 2,
+      "description": "Cohort retention matrix with attrition rates by period and group"
+    },
+    {
+      "step": 4,
+      "description": "Equity index table with group means and gap magnitude vs. reference group"
+    }
+  ]
+}

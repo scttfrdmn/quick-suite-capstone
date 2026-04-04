@@ -1,13 +1,14 @@
 name: openaq-pollution-spikes
 display_name: "OpenAQ Air Quality Anomaly Detection"
 description: |
-  An environmental scientist loads OpenAQ air quality monitoring data from
-  the Registry of Open Data on AWS, then runs an isolation forest anomaly
-  detection model to flag pollution spike events. The contamination parameter
-  (5%) targets the rarest measurement extremes — episodes likely caused by
-  wildfires, industrial accidents, or sensor faults. The returned anomaly
-  scores enable downstream temporal pattern investigation to determine when
-  and where spikes cluster.
+  An environmental scientist searches for OpenAQ air quality monitoring data
+  on the Registry of Open Data on AWS, then runs an isolation forest anomaly
+  detection model directly against the public OpenAQ S3 dataset to flag
+  pollution spike events. The contamination parameter (5%) targets the rarest
+  measurement extremes — episodes likely caused by wildfires, industrial
+  accidents, or sensor faults. The compute layer reads OpenAQ CSV records
+  directly from S3, bypassing the Quick Sight loading step. The returned
+  anomaly scores enable downstream temporal pattern investigation.
 category: academic-research
 requires:
   stacks: [data, compute]
@@ -25,27 +26,10 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
-
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load OpenAQ measurements dataset into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
 
   - id: run
     tool: compute_run
@@ -53,7 +37,7 @@ steps:
     description: "Run isolation forest to flag pollution spike anomalies (contamination=5%)"
     input:
       profile_id: "anomaly-isolation-forest"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://openaq-fetches/records/csv/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         features:

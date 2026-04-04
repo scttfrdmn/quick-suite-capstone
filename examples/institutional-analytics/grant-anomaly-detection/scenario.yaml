@@ -1,51 +1,61 @@
 name: grant-anomaly-detection
 display_name: "Sponsored Program Expenditure Anomaly Detection"
 description: |
-  Research office compliance team queries sponsored program expenditure records
-  via clAWS (Athena), runs an Isolation Forest anomaly detection model to flag
-  unusual burn rate patterns that may indicate award misuse or financial risk,
-  and exports flagged grants with anomaly scores for PI and compliance officer
-  review.
+  Research office compliance team discovers sponsored program expenditure
+  records via clAWS (Glue/Athena), runs an Isolation Forest anomaly detection
+  model to flag unusual burn rate patterns that may indicate award misuse or
+  financial risk, and exports flagged grants with anomaly scores for PI and
+  compliance officer review.
 category: institutional-analytics
 requires:
   stacks: [claws, compute]
   setup: |
-    Requires a sponsored programs Athena table with the following schema:
-      award_id         (string)  — sponsored award identifier (e.g. grant number)
-      pi_id            (string)  — anonymized principal investigator identifier
-      fiscal_month     (string)  — YYYY-MM format (e.g. "2024-03")
-      expenditure_usd  (double)  — total expenditures for the month in USD
-      total_budget_usd (double)  — total award budget
-      award_end_date   (date)    — award period end date
-
-    Register the table in your AWS Glue catalog. The clAWS approved-domains
-    config must include the "athena" domain for this table's database.
-    The compliance team's principal must have the "read" clAWS Cedar action
-    granted for the sponsored programs domain. Derived columns
-    (monthly_pct_of_budget, days_to_expiration) are computed in the plan
-    query — they do not need to exist in the source table.
+    Demo data pre-loaded: claws_demo.sponsored_program_expenditures in us-east-1 Glue catalog.
+    Schema: award_id, pi_id, fiscal_month, expenditure_usd, total_budget_usd, award_end_date.
 
 steps:
+  - id: discover
+    tool: claws-discover
+    stack: claws
+    description: "Find sponsored program expenditure table in Glue catalog"
+    input:
+      query: "sponsored program expenditure award"
+      scope:
+        domains: ["athena"]
+    assert:
+      - path: "sources"
+        op: exists
+      - path: "sources.0.id"
+        op: exists
+
+  - id: probe
+    tool: claws-probe
+    stack: claws
+    description: "Inspect schema of sponsored program expenditure table"
+    input:
+      source_id: "{discover.sources.0.id}"
+      mode: schema_only
+    assert:
+      - path: "schema"
+        op: exists
+
   - id: plan
     tool: claws-plan
     stack: claws
     description: "Plan query to extract monthly expenditure features for anomaly detection"
     input:
+      source_id: "{discover.sources.0.id}"
       objective: |
-        Extract monthly expenditure records per award with derived risk features:
-        award_id, pi_id, fiscal_month, expenditure_usd, budget_remaining_usd,
-        days_to_expiration. Compute monthly_pct_of_budget as
-        expenditure_usd / total_budget_usd. Compute days_to_expiration as days
-        between fiscal_month and award_end_date. Include only active awards
-        with at least 3 months of expenditure history.
+        Extract monthly expenditure records per award: award_id, pi_id,
+        fiscal_month, expenditure_usd, total_budget_usd, award_end_date.
+        Include only records with expenditure_usd greater than zero.
       output_columns:
         - award_id
         - pi_id
         - fiscal_month
         - expenditure_usd
-        - budget_remaining_usd
-        - days_to_expiration
-        - monthly_pct_of_budget
+        - total_budget_usd
+        - award_end_date
     assert:
       - path: "plan_id"
         op: exists
@@ -56,22 +66,25 @@ steps:
   - id: excavate
     tool: claws-excavate
     stack: claws
-    description: "Execute the sponsored expenditure feature query"
+    description: "Execute the sponsored expenditure query"
     input:
       plan_id: "{plan.plan_id}"
+      source_id: "{discover.sources.0.id}"
+      query: "{plan.steps.0.input.query}"
+      query_type: "{plan.steps.0.input.query_type}"
     assert:
       - path: "result_uri"
         op: exists
-      - path: "row_count"
+      - path: "rows_returned"
         op: gte
-        value: 50
+        value: 1
 
   - id: refine
     tool: claws-refine
     stack: claws
     description: "Deduplicate expenditure records before anomaly scoring"
     input:
-      result_uri: "{excavate.result_uri}"
+      run_id: "{excavate.run_id}"
       operations: ["dedupe"]
     assert:
       - path: "refined_uri"
@@ -82,13 +95,15 @@ steps:
     stack: claws
     description: "Stage refined expenditure data to S3 for anomaly detection compute"
     input:
-      result_uri: "{refine.refined_uri}"
-      destination: s3
-      provenance: true
+      run_id: "{refine.run_id}"
+      destination:
+        type: s3
+        uri: "s3://claws-runs-942542972736/demo-exports/grant-anomaly-detection/"
+      include_provenance: true
     assert:
-      - path: "s3_uri"
+      - path: "destination_uri"
         op: exists
-      - path: "provenance_chain"
+      - path: "provenance_uri"
         op: exists
 
   - id: run
@@ -97,16 +112,15 @@ steps:
     description: "Run Isolation Forest anomaly detection on expenditure patterns"
     input:
       profile_id: "anomaly-isolation-forest"
-      dataset_uri: "{export_for_compute.s3_uri}"
-      params:
+      source_uri: "{export_for_compute.destination_uri}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
         features:
-          - monthly_pct_of_budget
-          - days_to_expiration
           - expenditure_usd
+          - total_budget_usd
         contamination: 0.03
         return_scores: true
         id_column: award_id
-        group_columns: ["pi_id", "fiscal_month"]
       result_label: "grant-anomalies-isolation-forest"
     assert:
       - path: "job_id"
@@ -122,6 +136,7 @@ steps:
       max_attempts: 24
     input:
       job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
         op: in

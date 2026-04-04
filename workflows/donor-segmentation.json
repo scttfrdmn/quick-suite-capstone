@@ -1,0 +1,103 @@
+{
+  "name": "donor-segmentation",
+  "display_name": "Annual Donor Segmentation & Upgrade Scoring",
+  "description": "Segments the alumni donor base into behavioral clusters using K-means, then scores each segment for major gift upgrade likelihood using Random Forest. Outputs segment assignments and predicted upgrade probabilities for the annual fund and major gifts teams.",
+  "category": "institutional-analytics",
+  "stacks_required": ["compute"],
+  "inputs": [
+    {
+      "id": "source_uri",
+      "label": "Donor Giving History (S3 path)",
+      "type": "string",
+      "description": "S3 URI to a CSV with columns: donor_id, gift_amount, gift_date, fund_code, consecutive_years, upgraded (0/1 for last cycle).",
+      "example": "s3://my-bucket/donor-giving-history.csv"
+    },
+    {
+      "id": "k",
+      "label": "Number of Donor Segments",
+      "type": "integer",
+      "default": 4,
+      "description": "Number of K-means clusters (2–8). 4 is typical: lapsed, annual, loyal mid-level, major."
+    },
+    {
+      "id": "cluster_features",
+      "label": "Clustering Feature Columns",
+      "type": "string_list",
+      "default": ["gift_amount", "consecutive_years", "years_since_last_gift"],
+      "description": "Numeric columns used as K-means features."
+    },
+    {
+      "id": "upgrade_target_column",
+      "label": "Upgrade Label Column",
+      "type": "string",
+      "default": "upgraded",
+      "description": "Binary column (0/1) indicating whether the donor upgraded last cycle."
+    },
+    {
+      "id": "upgrade_features",
+      "label": "Upgrade Prediction Feature Columns",
+      "type": "string_list",
+      "default": ["gift_amount", "consecutive_years", "engagement_score"],
+      "description": "Columns used as inputs to the upgrade prediction model."
+    },
+    {
+      "id": "user_arn",
+      "label": "User ARN",
+      "type": "string",
+      "example": "arn:aws:iam::123456789012:user/advancement-officer"
+    }
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "tool": "compute_run",
+      "description": "Segment donors into behavioral clusters",
+      "profile_id": "clustering-kmeans",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.k": "k",
+        "parameters.features": "cluster_features",
+        "parameters.standardize": {"value": true}
+      },
+      "result_label": "donor-clusters"
+    },
+    {
+      "order": 2,
+      "tool": "compute_status",
+      "description": "Wait for clustering to complete",
+      "poll": {"interval_seconds": 15, "max_attempts": 24}
+    },
+    {
+      "order": 3,
+      "tool": "compute_run",
+      "description": "Score donors for major gift upgrade likelihood",
+      "profile_id": "classification-random-forest",
+      "parameters_from_inputs": {
+        "source_uri": "source_uri",
+        "user_arn": "user_arn",
+        "parameters.target": "upgrade_target_column",
+        "parameters.features": "upgrade_features",
+        "parameters.class_weight": {"value": "balanced"},
+        "parameters.n_estimators": {"value": 200}
+      },
+      "result_label": "donor-upgrade-scores"
+    },
+    {
+      "order": 4,
+      "tool": "compute_status",
+      "description": "Wait for upgrade scoring to complete",
+      "poll": {"interval_seconds": 15, "max_attempts": 24}
+    }
+  ],
+  "outputs": [
+    {
+      "step": 2,
+      "description": "Donor records with cluster_id (0–k) and distance to centroid"
+    },
+    {
+      "step": 4,
+      "description": "Donor records with predicted_class (upgraded/not) and predicted_prob_upgraded; feature importances"
+    }
+  ]
+}

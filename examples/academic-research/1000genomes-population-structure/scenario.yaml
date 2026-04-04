@@ -1,18 +1,19 @@
 name: 1000genomes-population-structure
 display_name: "1000 Genomes Population Structure Clustering"
 description: |
-  A bioinformatics researcher clusters 1000 Genomes Project samples by
-  principal component analysis (PCA) scores derived from variant allele
-  frequencies to identify global population structure. The workflow searches
-  RODA for the 1000 Genomes dataset, loads a pre-processed PCA summary table
-  (PC1–PC5 per sample), and runs k-means clustering with k=5 to recover the
-  five major super-population groups (AFR, AMR, EAS, EUR, SAS). Raw VCF
+  A bioinformatics researcher searches for 1000 Genomes Project data on the
+  Registry of Open Data on AWS, then runs k-means clustering on DRAGEN v4.4.7
+  re-analysis sample metadata to identify global population structure. The
+  workflow reads the 1000 Genomes DRAGEN dataset directly from S3, clustering
+  samples by genetic ancestry proxies (superpopulation group, sex) to recover
+  the five major super-population groups (AFR, AMR, EAS, EUR, SAS). Raw VCF
   processing is assumed to have been completed upstream; this scenario
-  demonstrates the discovery-to-cluster pipeline within Quick Suite.
+  demonstrates the discovery-to-cluster pipeline within Quick Suite without
+  the Quick Sight loading step.
 category: academic-research
 requires:
   stacks: [data, compute]
-  setup: "Requires a pre-processed PCA summary table registered as a RODA-compatible S3 path. See README for details."
+  setup: "No setup required — uses public RODA data."
 steps:
   - id: search
     tool: roda_search
@@ -26,44 +27,25 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
 
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load 1000 Genomes PCA summary table into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
-
   - id: run
     tool: compute_run
     stack: compute
-    description: "Run k-means clustering on PCA components (k=5 super-populations)"
+    description: "Run k-means clustering on sample metadata (k=5 super-populations)"
     input:
       profile_id: "clustering-kmeans"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://1000genomes-dragen-v4-4-7/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         k: 5
         features:
-          - "pc1"
-          - "pc2"
-          - "pc3"
-          - "pc4"
-          - "pc5"
+          - "superpopulation"
+          - "sex"
+          - "coverage"
         standardize: true
       result_label: "1000genomes-k5-superpopulations"
       department: "bioinformatics"

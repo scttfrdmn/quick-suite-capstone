@@ -1,0 +1,65 @@
+name: netcdf-prophet-pipeline
+display_name: "NetCDF Climate Data Ingest → Prophet Forecast Pipeline"
+description: |
+  A climate scientist ingests a NetCDF4 file from S3 (e.g. NOAA GHCN or ERA5
+  reanalysis) using the ingest-netcdf profile, which flattens the multidimensional
+  array to a tabular Parquet DataFrame. The result is immediately chained into
+  the forecast-prophet profile to project a surface temperature variable 24 months
+  forward. Demonstrates the compute chain feature: two profiles execute in sequence
+  within a single Step Functions execution, with the first profile's output fed
+  directly as the second profile's input — no manual export/re-upload required.
+category: academic-research
+requires:
+  stacks: [compute]
+  setup: |
+    Demo NetCDF file available at:
+      s3://claws-runs-942542972736/demo-data/climate.nc
+    Expected variables: time (dim), lat (dim), lon (dim), tmax (float).
+    Synthetic 10-year monthly station data generated with xarray.
+
+steps:
+  - id: run
+    tool: compute_run
+    stack: compute
+    description: "Ingest NetCDF file and chain into Prophet forecast"
+    input:
+      profile_id: "ingest-netcdf"
+      source_uri: "s3://claws-runs-942542972736/demo-data/climate.nc"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+      parameters:
+        variables:
+          - tmax
+      chain_profile_id: "forecast-prophet"
+      chain_parameters:
+        date_column: time
+        value_column: tmax
+        forecast_horizon: 24
+        seasonality_mode: additive
+      result_label: "climate-netcdf-tmax-24mo-forecast"
+      department: "climate-science"
+    assert:
+      - path: "job_id"
+        op: exists
+      - path: "estimated_cost_usd"
+        op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
+
+  - id: status
+    tool: compute_status
+    stack: compute
+    description: "Wait for NetCDF ingest + forecast chain to complete"
+    poll:
+      interval_seconds: 20
+      max_attempts: 24
+    input:
+      job_id: "{run.job_id}"
+      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
+    assert:
+      - path: "status"
+        op: in
+        value: [SUCCEEDED, FAILED]
+      - path: "step"
+        op: in
+        value: ["profile_1", "profile_2", null]
+        skip_if_fail: true

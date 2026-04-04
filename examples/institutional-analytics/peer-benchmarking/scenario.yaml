@@ -1,10 +1,13 @@
 name: peer-benchmarking
 display_name: "Peer Benchmarking — Tuition Revenue per FTE (IPEDS)"
 description: |
-  IR director loads IPEDS finance and enrollment data from RODA, runs a
-  linear regression to benchmark tuition revenue per FTE against a national
-  peer group, and routes results to the model router for board-ready talking
-  points comparing the institution's position in the peer distribution.
+  IR director searches for IPEDS finance and enrollment data on the Registry
+  of Open Data on AWS, runs a linear regression to benchmark tuition revenue
+  per FTE against a national peer group, and routes results to the model
+  router for board-ready talking points comparing the institution's position
+  in the peer distribution. The compute layer reads IPEDS finance data
+  directly from the public NCES S3 dataset, bypassing the Quick Sight
+  loading step.
 category: institutional-analytics
 requires:
   stacks: [data, compute, router]
@@ -23,27 +26,10 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
-
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load IPEDS finance dataset into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
 
   - id: run
     tool: compute_run
@@ -51,7 +37,7 @@ steps:
     description: "Run linear regression benchmarking tuition revenue per FTE against peer features"
     input:
       profile_id: "regression-glm"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://nces-ipeds-data/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         model_type: linear

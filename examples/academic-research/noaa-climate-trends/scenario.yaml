@@ -2,11 +2,13 @@ name: noaa-climate-trends
 display_name: "NOAA GHCN Climate Trend Forecast"
 description: |
   A climate scientist searches for NOAA Global Historical Climatology Network
-  (GHCN) daily temperature records on the Registry of Open Data on AWS, loads
-  the dataset into Quick Sight, then runs a Prophet time-series forecast to
+  (GHCN) daily temperature records on the Registry of Open Data on AWS, then
+  runs a Prophet time-series forecast directly against the public S3 bucket to
   project 24-month maximum temperature trends. The workflow demonstrates how
   researchers can move from open data discovery to publication-ready forecast
-  output without leaving the Quick Suite environment.
+  output without leaving the Quick Suite environment. Dataset loading into
+  Quick Sight is skipped — the compute layer reads the NOAA CSV files directly
+  from S3.
 category: academic-research
 requires:
   stacks: [data, compute]
@@ -24,27 +26,10 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
-
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load NOAA GHCN daily dataset into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
 
   - id: run
     tool: compute_run
@@ -52,7 +37,7 @@ steps:
     description: "Run Prophet forecast on 24-month temperature trend"
     input:
       profile_id: "forecast-prophet"
-      source_uri: "claws://{load.claws_source_id}"
+      source_uri: "s3://noaa-ghcn-pds/csv/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         date_column: "date"

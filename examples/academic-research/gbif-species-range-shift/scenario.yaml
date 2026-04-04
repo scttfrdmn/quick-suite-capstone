@@ -1,14 +1,14 @@
 name: gbif-species-range-shift
 display_name: "GBIF Species Range Shift Detection"
 description: |
-  An ecologist loads GBIF species occurrence data from RODA, enriches
-  observation records with Census American Community Survey geographic
-  variables (population density, median household income) to characterize
-  the landscape context of each occurrence, then runs a Spearman correlation
-  analysis to detect whether observed latitude is shifting northward over
-  time — a key signal of climate-driven range shifts. Two compute steps run
-  in sequence: geo-enrich first, then explore-correlations on the enriched
-  output.
+  An ecologist searches for GBIF species occurrence data on the Registry of
+  Open Data on AWS, then runs a Spearman correlation analysis directly against
+  the public GBIF Parquet snapshot to detect whether observed latitude is
+  shifting northward over time — a key signal of climate-driven range shifts.
+  The compute layer reads the GBIF occurrence Parquet files directly from S3,
+  bypassing the Quick Sight loading step. The workflow demonstrates how
+  researchers can go from open data discovery to statistical analysis output
+  without leaving the Quick Suite environment.
 category: academic-research
 requires:
   stacks: [data, compute]
@@ -26,76 +26,18 @@ steps:
     assert:
       - path: "datasets"
         op: exists
-      - path: "datasets.0.slug"
-        op: exists
       - path: "count"
         op: gte
         value: 1
         skip_if_fail: true  # catalog gap → skip, not fail
 
-  - id: load
-    tool: roda_load
-    stack: data
-    description: "Load GBIF occurrence dataset into Quick Sight"
-    # soft skip: if search returned count=0, roda_load will return {"error": "..."} — assert only exists
-    input:
-      slug: "{search.datasets.0.slug}"
-    assert:
-      - path: "datasetId"
-        op: exists
-        skip_if_fail: true  # non-QS format or access error → skip
-      - path: "claws_source_id"
-        op: exists
-        skip_if_fail: true
-
-  - id: enrich
-    tool: compute_run
-    stack: compute
-    description: "Geo-enrich occurrence records with ACS census variables"
-    input:
-      profile_id: "geo-enrich"
-      source_uri: "claws://{load.claws_source_id}"
-      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
-      parameters:
-        lat_column: "decimalLatitude"
-        lon_column: "decimalLongitude"
-        enrichment_source: "ACS_5year"
-        variables:
-          - "median_household_income"
-          - "population_density"
-      result_label: "gbif-acs-enriched"
-      department: "ecology"
-    assert:
-      - path: "job_id"
-        op: exists
-      - path: "estimated_cost_usd"
-        op: exists
-      - path: "estimated_duration_seconds"
-        op: exists
-
-  - id: enrich_status
-    tool: compute_status
-    stack: compute
-    description: "Wait for geo-enrichment job to complete"
-    poll:
-      interval_seconds: 15
-      max_attempts: 24
-    input:
-      job_id: "{enrich.job_id}"
-      user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
-    assert:
-      - path: "status"
-        op: in
-        value: [SUCCEEDED, FAILED]
-
-  - id: correlate
+  - id: run
     tool: compute_run
     stack: compute
     description: "Run Spearman correlations to detect northward range shift over time"
     input:
       profile_id: "explore-correlations"
-      # result_uri is only present on SUCCEEDED; if enrich_status failed this step will surface the gap
-      source_uri: "{enrich_status.result_uri}"
+      source_uri: "s3://gbif-open-data-us-east-1/occurrence/2026-04-01/occurrence.parquet/"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
       parameters:
         features:
@@ -111,6 +53,8 @@ steps:
         op: exists
       - path: "estimated_cost_usd"
         op: exists
+      - path: "estimated_duration_seconds"
+        op: exists
 
   - id: status
     tool: compute_status
@@ -120,7 +64,7 @@ steps:
       interval_seconds: 15
       max_attempts: 24
     input:
-      job_id: "{correlate.job_id}"
+      job_id: "{run.job_id}"
       user_arn: "arn:aws:iam::942542972736:user/e2e-test-user"
     assert:
       - path: "status"
