@@ -12,7 +12,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.5",
-    "pytest-substrate @ file:///Users/scttfrdmn/src/substrate/python",
+    # pytest-substrate installed from ~/src/substrate/python after substrate build in CI
 ]
 
 [tool.pytest.ini_options]

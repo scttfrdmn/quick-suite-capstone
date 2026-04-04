@@ -21,8 +21,8 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Install dependencies
-        run: uv sync --extra dev
+      - name: Install base dependencies
+        run: uv sync --extra dev --no-install-project
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -33,6 +33,9 @@ jobs:
         run: |
           git clone https://github.com/scttfrdmn/substrate.git ~/src/substrate
           cd ~/src/substrate && make build
+
+      - name: Install pytest-substrate
+        run: uv pip install ~/src/substrate/python
 
       - name: Run integration tests
         run: uv run pytest tests/integration/ -m integration -v
