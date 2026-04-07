@@ -116,7 +116,7 @@ def handler(event, context):
 
 ## Project Status
 
-### quick-suite-router ✅ v0.8.0
+### quick-suite-router ✅ v0.9.0
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
@@ -138,11 +138,17 @@ direct, Google Gemini direct.
 - VPC isolation: `enable_vpc` CDK context flag places all Lambdas in a private VPC with no internet egress; Gateway endpoints for S3/DynamoDB; Interface endpoints for Secrets Manager, Lambda, CloudWatch, X-Ray, Bedrock
 - PHI routing: `data_classification: "phi"` on any request silently restricts the provider candidate set to Bedrock only; non-Bedrock providers never receive PHI; returns 503 if no Bedrock available
 - `docs/compliance.md`: HIPAA-ready deployment guide (VPC walkthrough, PHI tagging, CloudTrail, Guardrail hardening for healthcare)
-- Full test suite (166 unit tests); cfn-lint + CDK synth in PR-blocking CI job
+- CORS wildcard replaced with `CORS_ALLOWED_ORIGIN` env var (CDK context `cors_allowed_origin`)
+- Spend ledger authorization: `department`/`user_id` extracted from Cognito JWT claims; body fallback for direct invocation
+- `query-spend` Lambda: non-admin callers restricted to own department/user by Cognito groups (`finance_admin`, `admin`)
+- Content audit logging: SHA-256 hashes of prompt + response when `enable_content_logging=true` CDK context flag is set
+- Guardrail version via SSM: all provider Lambdas read `/quick-suite/router/guardrail-version` at cold start
+- `guardrail-version-updater` Lambda: updates SSM param without `cdk deploy`
+- Full test suite (202 unit tests); cfn-lint + CDK synth in PR-blocking CI job
 
 ---
 
-### quick-suite-data ✅ v0.7.0
+### quick-suite-data ✅ v0.8.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -170,25 +176,36 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 
 **Source Registry:** `qs-data-source-registry` DynamoDB table. SSM param `/quick-suite/data/source-registry-arn` for clAWS catalog-aware discover integration (v0.10.0).
 
-Full test suite (192 unit tests; moto + Substrate).
+**v0.8.0 security hardening:**
+- S3 IAM scoping: RODA loader wildcard read documented; no PutObject on wildcard; institutional tools scoped to configured buckets; `roda_bucket_arns` CDK context for narrowing RODA access (#52)
+- SSRF prevention: catalog quality-check validates S3 bucket names from ARNs against naming rules before `head_bucket` (#53)
+- QuickSight principal: confirmed env var derivation, not caller event (#54)
+- register-source auth: `connection_config` format validated per source type (s3→bucket key, snowflake/redshift→Secrets Manager ARN); CDK resource policy via `register_source_admin_arn` context (#55)
+- Redshift workgroup removed from response; error messages sanitized (#56, #59)
+- DynamoDB protection: `catalog_table` and `source_registry_table` have `deletion_protection=True`, `point_in_time_recovery=True`; catalog removal policy changed to RETAIN (#57)
+- s3_preview file extension allowlist: `.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.ndjson`, `.gz` variants; extension validated before any S3 read (#58)
+- Error sanitization: s3_browse, s3_preview, redshift_browse, snowflake_browse return generic messages; no bucket names, ARNs, account IDs, or exception details in responses (#59)
+
+Full test suite (249 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.11.0
+### quick-suite-claws ✅ v0.14.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
-Eight AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
+Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
 
 **Tool Lambdas:**
 - `discover` — find data sources in approved domains (Glue catalog search + `registry` domain queries `qs-data-source-registry`)
 - `probe` — inspect schema, sample rows, cost estimates; PII scan on samples
-- `plan` — translate free-text objective → concrete query (LLM + Guardrails); stores `team_id`, `created_by`, and `status` (`ready` or `pending_approval` when `requires_irb: true`)
-- `excavate` — execute exact query from plan; blocks with `pending_approval` response when plan requires IRB; principal must be owner or in `shared_with`
+- `plan` — translate free-text objective → concrete query (LLM + Guardrails); stores `team_id`, `created_by`, and `status` (`ready` or `pending_approval` when `requires_irb: true`); supports `is_template=True` to create reusable `{{variable}}` templates (status `template`, no LLM invocation)
+- `excavate` — execute exact query from plan; blocks `pending_approval` and `template` plan statuses; principal must be owner or in `shared_with`
 - `refine` — dedupe, rank, summarize results with grounding guardrail
-- `export` — materialize to S3/EventBridge with provenance chain
+- `export` — materialize to S3/EventBridge with provenance chain; validates destination URI against `CLAWS_EXPORT_ALLOWED_DESTINATIONS` allowlist; enforces HTTPS on callback destinations
 - `team_plans` — list all plans for a given `team_id` (read-only summaries)
 - `share_plan` — owner grants read/excavate access to other principals via `shared_with` list
+- `instantiate_plan` — create a concrete plan from a template plan by substituting `{{variable}}` placeholders with provided values; calls full plan generation flow with resolved objective
 
 **Internal Lambdas (not AgentCore tools):**
 - `approve_plan` — IRB reviewer approves a `pending_approval` plan; checks `CLAWS_IRB_APPROVERS` allowlist; emits `claws.irb / PlanApproved` EventBridge event; blocks self-approval
@@ -199,17 +216,42 @@ Eight AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock G
 - FERPA Guardrail preset: `guardrails/ferpa/ferpa_guardrail.json`; five denied topic categories; SSN + student ID regex patterns; deploy with CDK context `enable_ferpa_guardrail: true`
 - Cedar policy templates: `policies/templates/{read-only,no-pii-export,approved-domains-only,phi-approved}.cedar`
 
+**v0.12.0 security hardening:**
+- Column-level access control: `plan` filters schema by principal roles; `excavate` post-filters result columns to `allowed_columns`
+- Multi-backend cost estimator: Athena, DynamoDB, MCP pricing models
+- HMAC-SHA-256 audit hashing: keyed secret in Secrets Manager; irreversible hashes in audit NDJSON
+- MCP source ID validation: `plan` validates server name against MCP registry before query generation
+- Mutation detection: `_check_mutation()` in DynamoDB PartiQL and S3 Select executors; INSERT/UPDATE/DELETE/DROP/CREATE/TRUNCATE/ALTER rejected
+- Refine summary guardrail: LLM-generated summary text scanned through `ApplyGuardrail` before return
+- `requires_irb` enforcement: `approve_plan` checks `plan.requires_irb` before any approval logic
+- OpenSearch error sanitization: raw endpoint URLs, index names, and exception details never returned to callers
+- DynamoDB PITR + deletion protection on all three tables
+- Lambda log retention: 90-day retention on all 12 Lambda log groups
+- Athena IAM scoped to `claws-readonly` workgroup ARN (no wildcard)
+
 **Safety layers (two independent):**
 - Cedar (AgentCore Policy) — structural/deterministic at Gateway boundary
 - Bedrock Guardrails — semantic/content at LLM I/O and data paths via `ApplyGuardrail` API
 
 **Core principle:** LLM reasoning never happens inside a tool. `plan` is the only tool with free-text input; `excavate` takes the concrete plan verbatim.
 
-Full test suite (247 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+**v0.13.0 security fixes (p1):**
+- Silent guardrail bypass made visible: `scan_payload()` returns `status="bypassed"` + ERROR log when `CLAWS_GUARDRAIL_ID` unconfigured (#77)
+- `validate_source_id()` in `shared.py` blocks path traversal, null bytes, control chars, unknown prefixes; called at plan + excavate handler entry (#78)
+- OpenSearch DSL script injection blocked: `_check_dsl_scripts()` recursive walk rejects `script`, `scripted_metric`, `scripted_sort` at any nesting depth (#76)
+- Cedar `plan.approve` permit requires `resource.requires_irb == true && resource.status == "pending_approval"` (#75)
+
+**v0.14.0 features:**
+- Plan templating: `plan` with `is_template=True` stores `{{variable}}` objective as `status="template"` with no LLM invocation; `excavate` blocks template plans (#66)
+- `instantiate_plan` tool: resolves `{{var}}` placeholders → values dict, rejects nested `{{` injection, calls plan generation with resolved objective, returns new concrete `plan_id` (#66)
+- Export destination allowlist: `CLAWS_EXPORT_ALLOWED_DESTINATIONS` env var (comma-separated URI prefixes); HTTPS enforced on all callback destinations regardless of allowlist (#80)
+- Watch runner plan status check: blocks `pending_approval` and `template` plans at execution time (EventBridge Scheduler bypasses Cedar Gateway) (#79)
+
+Full test suite (209 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
-### quick-suite-compute ✅ v0.12.0
+### quick-suite-compute ✅ v0.14.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
@@ -253,9 +295,28 @@ Ingest: ingest-netcdf, ingest-pdf-extract, ingest-geojson
 Custom: custom-python (RestrictedPython sandbox), custom-generated (LLM-generated code)
 Transform: transform-spark (EMR Serverless)
 
+**v0.14.0 security hardening:**
+- compute-cancel ownership check: requires `user_arn`; verifies against execution input via `sfn.describe_execution()`; same "not found" message on mismatch (no info leak) (#82)
+- Budget conditional write backstop: `record-spend` uses `ConditionExpression` on `spend_usd <= :remaining`; `ConditionalCheckFailedException` fails open with warning log (#79)
+- source_uri bucket allowlist: `COMPUTE_ALLOWED_BUCKETS` env var (CDK context `compute_allowed_buckets`); rejects s3:// buckets not in list; empty list = allow all (backward compat) (#75)
+- result_label validation: `^[A-Za-z0-9_\-]{1,64}$` enforced in compute-run (400 error) and record-spend (silent skip) (#76)
+- `_validate_params` max-length: `MAX_STRING_PARAM_LENGTH = 256` guards on `column`, `column_list` items, `string_list` items (#80)
+- DynamoDB protection: all 4 tables (SpendTable, SnapshotsTable, HistoryTable, SchedulesTable) have `deletion_protection=True`, `point_in_time_recovery=True`, `removal_policy=RETAIN` (#81)
+- Log retention: `log_retention=logs.RetentionDays.THREE_MONTHS` (90 days) on all 16 Lambda functions (#84)
+
+**v0.13.0 security fixes:**
+- Pandas sandbox proxy: `_SafePandasProxy` blocks URL-based `read_*` method calls in RestrictedPython sandbox (#72)
+- AST static analysis: `_analyze_generated_code()` gates LLM-generated code before execution (#73)
+- Scoped SFN execution role: explicit `qs-compute-sfn-role` with `lambda:InvokeFunction` only on state machine Lambdas (#74)
+
+**v0.13.0 features:**
+- Job chaining: `HasChainProfile` Choice + `PrepareChainInput` Pass states after DeliverResults; chain runs second compute+deliver pass with output of first as input (#55)
+- `compute_status` SUCCEEDED response includes `summary` dict from `$.compute` (row_count, columns, duration_seconds, metadata_s3_uri) (#57)
+- `compute_schedule` AgentCore tool: create/list/delete scheduled jobs via EventBridge Scheduler; `qs-compute-schedules` DynamoDB table; `compute-schedule-trigger` internal Lambda (#56)
+
 **Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (421 unit tests); Substrate integration in CI.
+Full test suite (505 unit tests); Substrate integration in CI.
 
 ---
 
