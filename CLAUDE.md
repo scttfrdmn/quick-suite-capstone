@@ -148,7 +148,7 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.8.0
+### quick-suite-data ✅ v0.9.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -162,8 +162,10 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - `s3_load` — register S3 path as Quick Sight data source; multi-prefix support; writes `ClawsLookupTable`
 - `snowflake_browse` — list tables in a Snowflake data source (SQL API v2, no vendor SDK)
 - `snowflake_preview` — sample rows + schema from a Snowflake table
+- `snowflake_query` — parameterized read-only SQL via Snowflake SQL API v2; `?` placeholders, positional bindings, mutation detection, max 1000 rows
 - `redshift_browse` — list tables in a Redshift Serverless workgroup (Redshift Data API)
 - `redshift_preview` — sample rows + schema from a Redshift table
+- `redshift_query` — parameterized read-only SQL via Redshift Data API; `?` → `$N` rewriting, async poll, mutation detection, max 1000 rows
 - `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift); keyword scoring; `data_classification_filter`; `skipped_sources`
 
 **Internal Lambdas:**
@@ -176,6 +178,11 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 
 **Source Registry:** `qs-data-source-registry` DynamoDB table. SSM param `/quick-suite/data/source-registry-arn` for clAWS catalog-aware discover integration (v0.10.0).
 
+**v0.9.0:**
+- Per-caller credential isolation: all four browse/preview Snowflake/Redshift tools accept optional `caller_secret_arn`; validated against `arn:aws:secretsmanager:` format and `CALLER_SECRETS_ALLOWED_ARNS` prefix allowlist; falls back to shared service account (#40)
+- `snowflake_query` AgentCore Lambda target: parameterized SQL, `?` bindings, mutation detection (#35)
+- `redshift_query` AgentCore Lambda target: parameterized SQL, `?` → `$N`, Redshift Data API async pattern, mutation detection (#36)
+
 **v0.8.0 security hardening:**
 - S3 IAM scoping: RODA loader wildcard read documented; no PutObject on wildcard; institutional tools scoped to configured buckets; `roda_bucket_arns` CDK context for narrowing RODA access (#52)
 - SSRF prevention: catalog quality-check validates S3 bucket names from ARNs against naming rules before `head_bucket` (#53)
@@ -186,7 +193,7 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - s3_preview file extension allowlist: `.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.ndjson`, `.gz` variants; extension validated before any S3 read (#58)
 - Error sanitization: s3_browse, s3_preview, redshift_browse, snowflake_browse return generic messages; no bucket names, ARNs, account IDs, or exception details in responses (#59)
 
-Full test suite (249 unit tests; Substrate integration).
+Full test suite (289 unit tests; Substrate integration).
 
 ---
 
@@ -251,7 +258,7 @@ Full test suite (209 tests: Substrate integration + pure unit). MCP executor for
 
 ---
 
-### quick-suite-compute ✅ v0.14.0
+### quick-suite-compute ✅ v0.14.1
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
