@@ -120,8 +120,8 @@ def handler(event, context):
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
-Python CDK. Five tool endpoints (`analyze`, `generate`, `research`,
-`summarize`, `code`). Four providers: Bedrock, Anthropic direct, OpenAI
+Python CDK. Six tool endpoints (`analyze`, `generate`, `research`,
+`summarize`, `code`, `extract`). Four providers: Bedrock, Anthropic direct, OpenAI
 direct, Google Gemini direct.
 
 **What's built:**
@@ -159,6 +159,12 @@ direct, Google Gemini direct.
 - Dry-run mode: `dry_run: true` in any request body returns `{estimated_cost_usd, selected_provider, selected_model, tokens_in_estimate}` without invoking any model or writing spend ledger; capability + context filters still apply (#37)
 - Per-user rate limiting: new `lambdas/authorizer/handler.py` Lambda authorizer decodes Cognito JWT, extracts `sub`, returns IAM Allow policy with `usageIdentifierKey = sub`; CDK creates per-user usage plan (`PerUserRateLimitPlan`) when `rate_limit_per_minute` context is set, with `throttle.rate_limit = rpm/60`, `burst_limit = rpm*2`, `quota.limit` from `rate_limit_per_day` (default 1000) (#36)
 - 8 new tests: `TestDryRunMode` (5) + `TestPerUserRateLimitingAuthorizer` (3)
+
+**v0.12.0 science literature extraction:**
+- `extract` tool (#38): 6th tool endpoint for structured extraction from text; `extraction_types` list (e.g. `effect_sizes`, `confounds`, `methods_profile`, `open_problems`, `citations`); auto-requires `structured_output` capability; providers enable JSON mode (OpenAI: `response_format={"type":"json_object"}`, Gemini: `responseMimeType`); response includes `extracted_fields` dict
+- `open_problems` extraction type (#39): extracts `[{gap_statement, domain, confidence}]` objects; optional `store_at_uri: "s3://..."` persists gap list to S3 for clAWS watch use
+- `grounding_mode: "strict"` on `research` tool (#40): injects citation directive; response gains `sources_used`, `grounding_coverage`, `low_confidence_claims` parsed from trailing JSON block
+- 13 new tests: `TestExtractTool` (5) + `TestGroundingModeStrict` (3) + open_problems variants (5); total 263 unit tests
 
 ---
 
@@ -227,7 +233,7 @@ Full test suite (352 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.15.0
+### quick-suite-claws ✅ v0.16.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
@@ -291,11 +297,16 @@ Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Gu
 - Compliance surface watch (#69) — `compliance_mode: true` + `compliance_ruleset_uri` on watch spec (required together); `_run_compliance_watch()` evaluates 4 rule types (`international_site`, `new_data_source`, `subject_count`, `classification_change`); Router `summarize` drafts amendment text per gap (fail-open → ""); Cedar: `claws.compliance_watch` (irb_monitor role)
 - 26 new tests in `tools/tests/test_v15_completion.py`
 
-Full test suite (402 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+**v0.16.0 science literature watches:**
+- `watch_type: "literature"` (#71) — monitors PubMed/bioRxiv rows for papers matching a lab profile; per-paper relevance scoring via Router `summarize`; `reagent_config_uri` and `protocol_config_uri` classify `relevance_type` (reagent/protocol/methodology) with appropriate `validation_steps`; threshold from `semantic_match.abstract_similarity_threshold` (default 0.75); router failures non-blocking; Cedar: `claws.literature_watch` (lab_director role)
+- `watch_type: "cross_discipline"` (#72) — detects adjacent-field papers addressing open problems; loads gap list from `open_problems_uri` (S3 or SSM); per-paper Router `research` call with `grounding_mode="strict"`; qualifies on `cross_field_score >= field_distance` AND `citations_in_primary_field <= threshold`; `call_router()` extended with `grounding_mode` param; Cedar: `claws.cross_discipline_watch` (lab_director role)
+- 23 new tests in `tools/tests/test_v16_watches.py`
+
+Full test suite (425 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
-### quick-suite-compute ✅ v0.14.1
+### quick-suite-compute ✅ v0.15.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
@@ -324,14 +335,14 @@ Seven AgentCore Lambda tools + Step Functions workflow + 31 analysis profiles ac
 
 **Router spend integration (Issue #23):** `compute_run` reads `qs-router-spend` (the quick-suite-router's spend ledger) via `ROUTER_SPEND_TABLE` env var (set from `router_spend_table_arn` CDK context); blocks jobs if department cumulative spend + estimated cost exceeds `MONTHLY_BUDGET_USD`; fails open on AWS errors.
 
-**31 Analysis Profiles (Lambda unless noted):**
+**33 Analysis Profiles (Lambda unless noted):**
 Statistics: anova, chi-square
 Prediction/ML: regression-glm, regression-logistic, classification-random-forest
 Forecasting: forecast-prophet, change-detection, seasonality-decompose
 Clustering: clustering-kmeans
 Text: text-topics, text-sentiment, text-similarity
 Anomaly: anomaly-isolation-forest
-Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier
+Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier, intersectionality-equity, assessment-irt
 Geospatial: geo-enrich (Census API), isochrone, spatial-aggregate
 Exploration: explore-correlations
 Research: grant-portfolio, network-coauthor
@@ -358,9 +369,14 @@ Transform: transform-spark (EMR Serverless)
 - `compute_status` SUCCEEDED response includes `summary` dict from `$.compute` (row_count, columns, duration_seconds, metadata_s3_uri) (#57)
 - `compute_schedule` AgentCore tool: create/list/delete scheduled jobs via EventBridge Scheduler; `qs-compute-schedules` DynamoDB table; `compute-schedule-trigger` internal Lambda (#56)
 
+**v0.15.0 higher-ed equity + psychometrics profiles:**
+- `intersectionality-equity` (#61): cross-tabs outcome metric by 2+ demographic columns; Disparate Impact ratio (80% rule); n<`n_suppress` cell suppression; `group_key`, `n`, `group_mean`, `di_ratio`, `adverse_impact_flag` columns
+- `assessment-irt` (#62): 2PL IRT model via `girth` library; returns three tables — `item_parameters` (difficulty, discrimination), `person_abilities` (theta, se), `item_information`; graceful 503 if `girth` not installed; min 5 items / 100 respondents enforced
+- 10 new tests: `TestIntersectionalityEquity` (5) + `TestAssessmentIRT` (5)
+
 **Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (505 unit tests); Substrate integration in CI.
+Full test suite (530 unit tests); Substrate integration in CI.
 
 ---
 
