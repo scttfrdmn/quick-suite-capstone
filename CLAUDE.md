@@ -116,7 +116,7 @@ def handler(event, context):
 
 ## Project Status
 
-### quick-suite-router ✅ v0.9.0
+### quick-suite-router ✅ v0.11.0
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
@@ -146,9 +146,18 @@ direct, Google Gemini direct.
 - `guardrail-version-updater` Lambda: updates SSM param without `cdk deploy`
 - Full test suite (202 unit tests); cfn-lint + CDK synth in PR-blocking CI job
 
+**v0.11.0 capability routing:**
+- Model capability registry: `model_capabilities` + `model_context_windows` top-level dicts in `routing_config.yaml`; keyed by `provider/model_id`; non-breaking alongside existing `preferred` lists
+- `select_provider()` now accepts `required_capabilities: list` and `context_budget: int`; skips providers missing any required cap or with insufficient context window; returns 3-tuple `(provider_key, model_id, skip_reason)`
+- `estimate_tokens(text)` heuristic: `max(1, len(text) // 4)` applied to prompt + system + context + max_tokens
+- Specific 400 error codes: `context_limit_exceeded` and `unsatisfiable_capabilities` with `tokens_in_estimate` in response body
+- `tokens_in_estimate` included in every successful response
+- Fallback chain respects the same capability + context filters
+- 12 new tests in `TestCapabilityAndContextRouting`
+
 ---
 
-### quick-suite-data ✅ v0.9.0
+### quick-suite-data ✅ v0.10.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -166,7 +175,10 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - `redshift_browse` — list tables in a Redshift Serverless workgroup (Redshift Data API)
 - `redshift_preview` — sample rows + schema from a Redshift table
 - `redshift_query` — parameterized read-only SQL via Redshift Data API; `?` → `$N` rewriting, async poll, mutation detection, max 1000 rows
-- `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift); keyword scoring; `data_classification_filter`; `skipped_sources`
+- `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift/ipeds/nih_reporter/nsf_awards); keyword scoring; `data_classification_filter`; `skipped_sources`
+- `ipeds_search` — search IPEDS via Urban Institute Education Data Portal API (public, no auth); `survey`, `year_range`, `max_results` params; returns `series_slug`, `year_range`, `quality_score`
+- `nih_reporter_search` — search NIH Reporter v2 API (public, no auth); `fiscal_year`, `institution`, `pi_name` filters; returns `core_project_num`, `pi_names`, `award_amount`, `abstract_text`
+- `nsf_awards_search` — search NSF Award Search API (public, no auth); `date_start`, `date_end`, `pi_name` filters; returns `award_id`, `pi_name`, `awardee_name`, `funds_obligated_amt`, `abstract_text`
 
 **Internal Lambdas:**
 - `catalog-sync` — syncs RODA NDJSON catalog into DynamoDB daily (+ SNS real-time)
@@ -193,11 +205,17 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - s3_preview file extension allowlist: `.parquet`, `.csv`, `.tsv`, `.json`, `.jsonl`, `.ndjson`, `.gz` variants; extension validated before any S3 read (#58)
 - Error sanitization: s3_browse, s3_preview, redshift_browse, snowflake_browse return generic messages; no bucket names, ARNs, account IDs, or exception details in responses (#59)
 
-Full test suite (289 unit tests; Substrate integration).
+**v0.10.0 research API integrations:**
+- Three new AgentCore Lambda tools: `ipeds_search`, `nih_reporter_search`, `nsf_awards_search` (all public APIs, stdlib `urllib`, no vendor SDKs)
+- `federated_search` extended with `_search_ipeds`, `_search_nih_reporter`, `_search_nsf_awards` dispatch functions
+- CDK: three new Lambda constructs in `open_data_stack.py`; all added to `tool_arns` CfnOutput
+- 25 new tests in `tests/test_research_sources.py`
+
+Full test suite (314 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.14.0
+### quick-suite-claws ✅ v0.15.0 (partial)
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
@@ -254,7 +272,16 @@ Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Gu
 - Export destination allowlist: `CLAWS_EXPORT_ALLOWED_DESTINATIONS` env var (comma-separated URI prefixes); HTTPS enforced on all callback destinations regardless of allowlist (#80)
 - Watch runner plan status check: blocks `pending_approval` and `template` plans at execution time (EventBridge Scheduler bypasses Cedar Gateway) (#79)
 
-Full test suite (209 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+**v0.15.0 new-award intelligence (#70):**
+- `watch_type: "new_award"` — executes a locked plan against NIH Reporter or NSF Awards source, scores award abstracts for semantic similarity to a lab profile abstract stored in SSM Parameter Store via Router `summarize`; only awards ≥ threshold fired in notification
+- `semantic_match` config on watch spec: `lab_profile_ssm_key` (required), `abstract_similarity_threshold` (default 0.82), `abstract_field` (optional)
+- Router failures per-award are non-blocking (WARNING logged, award skipped); max 50 rows scored per run
+- `discover` extended: `nih-reporter` and `nsf-awards` domains dispatch to `_discover_registry()` with `source_type_filter`
+- Scheduler CDK: `ssm:GetParameter` on `/quick-suite/claws/*` added to watch runner role
+- 16 new tests in `tools/tests/test_new_award_watch.py`
+- Deferred (#67 accreditation, #69 compliance watches): require Cedar domain logic
+
+Full test suite (376 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
