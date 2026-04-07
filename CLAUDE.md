@@ -116,7 +116,7 @@ def handler(event, context):
 
 ## Project Status
 
-### quick-suite-router ✅ v0.11.0
+### quick-suite-router ✅ v0.12.0
 
 GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
 
@@ -155,9 +155,14 @@ direct, Google Gemini direct.
 - Fallback chain respects the same capability + context filters
 - 12 new tests in `TestCapabilityAndContextRouting`
 
+**v0.12.0 operational controls:**
+- Dry-run mode: `dry_run: true` in any request body returns `{estimated_cost_usd, selected_provider, selected_model, tokens_in_estimate}` without invoking any model or writing spend ledger; capability + context filters still apply (#37)
+- Per-user rate limiting: new `lambdas/authorizer/handler.py` Lambda authorizer decodes Cognito JWT, extracts `sub`, returns IAM Allow policy with `usageIdentifierKey = sub`; CDK creates per-user usage plan (`PerUserRateLimitPlan`) when `rate_limit_per_minute` context is set, with `throttle.rate_limit = rpm/60`, `burst_limit = rpm*2`, `quota.limit` from `rate_limit_per_day` (default 1000) (#36)
+- 8 new tests: `TestDryRunMode` (5) + `TestPerUserRateLimitingAuthorizer` (3)
+
 ---
 
-### quick-suite-data ✅ v0.10.0
+### quick-suite-data ✅ v0.11.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -175,7 +180,7 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - `redshift_browse` — list tables in a Redshift Serverless workgroup (Redshift Data API)
 - `redshift_preview` — sample rows + schema from a Redshift table
 - `redshift_query` — parameterized read-only SQL via Redshift Data API; `?` → `$N` rewriting, async poll, mutation detection, max 1000 rows
-- `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift/ipeds/nih_reporter/nsf_awards); keyword scoring; `data_classification_filter`; `skipped_sources`
+- `federated_search` — unified search across all registered source types (roda/s3/snowflake/redshift/ipeds/nih_reporter/nsf_awards/pubmed/biorxiv/semantic_scholar/arxiv/reagents); keyword scoring; `data_classification_filter`; `skipped_sources`
 - `ipeds_search` — search IPEDS via Urban Institute Education Data Portal API (public, no auth); `survey`, `year_range`, `max_results` params; returns `series_slug`, `year_range`, `quality_score`
 - `nih_reporter_search` — search NIH Reporter v2 API (public, no auth); `fiscal_year`, `institution`, `pi_name` filters; returns `core_project_num`, `pi_names`, `award_amount`, `abstract_text`
 - `nsf_awards_search` — search NSF Award Search API (public, no auth); `date_start`, `date_end`, `pi_name` filters; returns `award_id`, `pi_name`, `awardee_name`, `funds_obligated_amt`, `abstract_text`
@@ -211,11 +216,18 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - CDK: three new Lambda constructs in `open_data_stack.py`; all added to `tool_arns` CfnOutput
 - 25 new tests in `tests/test_research_sources.py`
 
-Full test suite (314 unit tests; Substrate integration).
+**v0.11.0 scientific literature + reagent sources:**
+- Five new AgentCore Lambda tools: `pubmed_search` (NCBI E-utilities esearch+esummary, optional `NCBI_API_KEY`, recency quality score), `biorxiv_search` (bioRxiv/medRxiv details API, `server=both` dual-call, last-30-days default), `semantic_scholar_search` (Semantic Scholar Graph API, optional `SEMANTIC_SCHOLAR_API_KEY`, citation+recency quality score, client-side `min_citations`/`year_start`/`year_end`/`fields_of_study` filters), `arxiv_search` (Atom/XML via `xml.etree.ElementTree`, `category_filter`), `reagent_search` (Addgene catalog API v2, requires `ADDGENE_API_KEY`, returns informational note when absent)
+- `federated_search` extended with 5 new dispatch functions; `_search_fn` dict now covers 12 source types
+- CDK: 5 new Lambda constructs; all added to `_new_tool_fns`, KMS grant list, `tool_arns` CfnOutput
+- `docs/adding-sources.md`: contributor guide (source interface contract, auth patterns, quality score guidelines, testing skeleton, CDK wiring)
+- 38 new tests in `tests/test_literature_sources.py`
+
+Full test suite (352 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.15.0 (partial)
+### quick-suite-claws ✅ v0.15.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
@@ -272,16 +284,14 @@ Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Gu
 - Export destination allowlist: `CLAWS_EXPORT_ALLOWED_DESTINATIONS` env var (comma-separated URI prefixes); HTTPS enforced on all callback destinations regardless of allowlist (#80)
 - Watch runner plan status check: blocks `pending_approval` and `template` plans at execution time (EventBridge Scheduler bypasses Cedar Gateway) (#79)
 
-**v0.15.0 new-award intelligence (#70):**
-- `watch_type: "new_award"` — executes a locked plan against NIH Reporter or NSF Awards source, scores award abstracts for semantic similarity to a lab profile abstract stored in SSM Parameter Store via Router `summarize`; only awards ≥ threshold fired in notification
-- `semantic_match` config on watch spec: `lab_profile_ssm_key` (required), `abstract_similarity_threshold` (default 0.82), `abstract_field` (optional)
-- Router failures per-award are non-blocking (WARNING logged, award skipped); max 50 rows scored per run
-- `discover` extended: `nih-reporter` and `nsf-awards` domains dispatch to `_discover_registry()` with `source_type_filter`
-- Scheduler CDK: `ssm:GetParameter` on `/quick-suite/claws/*` added to watch runner role
-- 16 new tests in `tools/tests/test_new_award_watch.py`
-- Deferred (#67 accreditation, #69 compliance watches): require Cedar domain logic
+**v0.15.0 proactive intelligence workflows:**
+- `watch_type: "new_award"` (#70) — executes a locked plan against NIH Reporter or NSF Awards source, scores award abstracts for semantic similarity to a lab profile abstract stored in SSM Parameter Store via Router `summarize`; only awards ≥ threshold fired in notification; `semantic_match` config: `lab_profile_ssm_key`, `abstract_similarity_threshold` (default 0.82), `abstract_field`; 16 new tests
+- Watch action routing (#68) — `action_routing` field on any watch spec: `{destination_type: sns|eventbridge|bedrock_agent, destination_arn, context_template}`; `{key}` placeholder substitution from `diff_summary`; Router `summarize` call → `draft_text` (fail-open); SNS and EventBridge dispatch; Scheduler CDK: `sns:Publish` on `*` added to runner role
+- Accreditation evidence ledger (#67) — `accreditation_config_uri` field on watch spec; `load_config_from_uri()` in `shared.py` loads JSON from `s3://bucket/key` or `ssm:/param/path`; `_evaluate_accreditation()` in runner evaluates `evidence_predicate` per SACSCOC/HLC standard against rows; gaps → `accreditation_gaps` in audit output; Cedar: `claws.accreditation_watch` (accreditation_reviewer role)
+- Compliance surface watch (#69) — `compliance_mode: true` + `compliance_ruleset_uri` on watch spec (required together); `_run_compliance_watch()` evaluates 4 rule types (`international_site`, `new_data_source`, `subject_count`, `classification_change`); Router `summarize` drafts amendment text per gap (fail-open → ""); Cedar: `claws.compliance_watch` (irb_monitor role)
+- 26 new tests in `tools/tests/test_v15_completion.py`
 
-Full test suite (376 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+Full test suite (402 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
