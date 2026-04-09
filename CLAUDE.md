@@ -168,7 +168,7 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.12.0
+### quick-suite-data ✅ v0.13.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -234,11 +234,17 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - CDK: `qs-claws-memory-registry` DynamoDB table (PK: `user_arn_hash`, SK: `dataset_type`), deletion protection, PITR
 - 5 new tests in `tests/test_memory_source.py`
 
-Full test suite (357 unit tests; Substrate integration).
+**v0.13.0 quality + sources:**
+- `requires_transform` dispatch: non-native formats (.nc, .h5, .pdf, .geojson) return `suggested_profile` pointing to compute ingest profile instead of failing (#37)
+- Data quality metrics: `s3_preview`, `snowflake_preview`, `redshift_preview` responses include `quality` block with `null_pct`, `estimated_cardinality`, `duplicate_row_pct` per column (#38)
+- `research_search` AgentCore Lambda target: Zenodo + Figshare public API search with 429 exponential backoff; `federated_search` extended with `_search_zenodo` and `_search_figshare` dispatch (#39)
+- 15 new tests in `tests/test_quality_sources.py`
+
+Full test suite (372 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.17.0
+### quick-suite-claws ✅ v0.18.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
@@ -316,15 +322,22 @@ Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Gu
 - Cedar: `claws.remember` (owner-only write) and `claws.recall` (owner or shared_with read) permits
 - 20 new tests in `tools/tests/test_v17_memory.py`
 
-Full test suite (445 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+**v0.18.0 backend coverage:**
+- PostgreSQL executor: `psycopg2` connection from Secrets Manager, read-only sessions, 60s statement timeout, mutation detection; `query_type: "postgres_sql"` (#63)
+- Redshift executor: Redshift Data API async execute-and-poll, typed field extraction, `$5/TB` cost model, mutation detection; `query_type: "redshift_sql"` (#64)
+- Per-principal budget caps: SSM-based limits (`/quick-suite/claws/budget/{principal_arn}`), DynamoDB `claws-principal-spend` table for monthly spend tracking, 402 on exceeded, fail-open on errors, `enable_principal_budgets` CDK context gate (#65)
+- CDK: `PrincipalSpendTable` DynamoDB (PITR, deletion protection), IAM for Secrets Manager + Redshift Data API + SSM budget params
+- 18 new tests in `tools/tests/test_v18_backend_coverage.py`
+
+Full test suite (455 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
-### quick-suite-compute ✅ v0.16.0
+### quick-suite-compute ✅ v0.17.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
-Seven AgentCore Lambda tools + Step Functions workflow + 38 analysis profiles across 12 categories.
+Seven AgentCore Lambda tools + Step Functions workflow + 41 analysis profiles across 12 categories.
 
 **Tool Lambdas:**
 - `compute_profiles` — list available profiles with parameters, cost, and duration estimates
@@ -359,7 +372,7 @@ Anomaly: anomaly-isolation-forest
 Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier, intersectionality-equity, assessment-irt
 Geospatial: geo-enrich (Census API), isochrone, spatial-aggregate
 Exploration: explore-correlations
-Research: grant-portfolio, network-coauthor, causal-iv, causal-rd, causal-did, grant-pipeline, provenance-graph
+Research: grant-portfolio, network-coauthor, causal-iv, causal-rd, causal-did, grant-pipeline, provenance-graph, power-analysis, anomaly-hypothesis, reproducibility-check
 Ingest: ingest-netcdf, ingest-pdf-extract, ingest-geojson
 Custom: custom-python (RestrictedPython sandbox), custom-generated (LLM-generated code)
 Transform: transform-spark (EMR Serverless)
@@ -399,9 +412,16 @@ Transform: transform-spark (EMR Serverless)
 - CDK: `PeerCohortCacheTable` DynamoDB (PAY_PER_REQUEST, PITR, deletion protection, TTL); `COMPUTE_HISTORY_TABLE` env var; `linearmodels==6.1` in Docker image
 - 28 new tests: `TestRunnerDispatchPlainDict` (1), `TestPeerCohort` (4), `TestCausalIV` (5), `TestCausalRD` (5), `TestCausalDiD` (5), `TestGrantPipeline` (4), `TestProvenanceGraph` (4)
 
+**v0.17.0 science research profiles:**
+- `power-analysis` (#69): literature-informed sample size calculation via Router `extract` cross-reference on PubMed IDs; Cohen's d from pilot data or manual input; scipy power curves (n=2 to 100); confound checklists; graceful degradation when Router unavailable
+- `anomaly-hypothesis` (#70): IsolationForest + Router `research` grounding for per-anomaly classification (`instrument_error | known_noise | reported_effect | novel_candidate`); domain z-thresholds (genomics 3.5, proteomics 3.0, behavioral 2.5, geospatial 3.0); Router unavailable → all `novel_candidate`
+- `reproducibility-check` (#71): re-execute analysis script in RestrictedPython sandbox against deposited data; compare outputs to `manuscript_results` with configurable tolerance; provenance-graph integration for script version lookup
+- CDK: `ROUTER_API_URL` env var from CDK context
+- 18 new tests in `tests/test_research_science.py`
+
 **Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (583 unit tests); Substrate integration in CI.
+Full test suite (616 unit tests); Substrate integration in CI.
 
 ---
 
