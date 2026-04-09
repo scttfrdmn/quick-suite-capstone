@@ -168,7 +168,7 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.11.0
+### quick-suite-data ✅ v0.12.0
 
 GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
 
@@ -229,11 +229,16 @@ Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 - `docs/adding-sources.md`: contributor guide (source interface contract, auth patterns, quality score guidelines, testing skeleton, CDK wiring)
 - 38 new tests in `tests/test_literature_sources.py`
 
-Full test suite (352 unit tests; Substrate integration).
+**v0.12.0 memory source registration:**
+- `register-memory-source` internal Lambda: registers clAWS memory NDJSON as QuickSight dataset; idempotent via `qs-claws-memory-registry` DynamoDB table check; S3 manifest generation + QuickSight CreateDataSource/CreateDataSet/CreateIngestion; `MemoryRegistrarArn` CfnOutput for cross-stack invocation (#60)
+- CDK: `qs-claws-memory-registry` DynamoDB table (PK: `user_arn_hash`, SK: `dataset_type`), deletion protection, PITR
+- 5 new tests in `tests/test_memory_source.py`
+
+Full test suite (357 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.16.0
+### quick-suite-claws ✅ v0.17.0
 
 GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
 
@@ -302,15 +307,24 @@ Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Gu
 - `watch_type: "cross_discipline"` (#72) — detects adjacent-field papers addressing open problems; loads gap list from `open_problems_uri` (S3 or SSM); per-paper Router `research` call with `grounding_mode="strict"`; qualifies on `cross_field_score >= field_distance` AND `citations_in_primary_field <= threshold`; `call_router()` extended with `grounding_mode` param; Cedar: `claws.cross_discipline_watch` (lab_director role)
 - 23 new tests in `tools/tests/test_v16_watches.py`
 
-Full test suite (425 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
+**v0.17.0 institutional memory + flow trigger:**
+- `claws.remember` tool: NDJSON append to S3 with ETag conditional write (3 retries on PreconditionFailed); first write invokes `register-memory-source` Lambda (quick-suite-data v0.12.0) to register as QuickSight dataset; `claws-memory-registry` DynamoDB idempotency check (#88)
+- `claws.recall` tool: load NDJSON from S3, filter pipeline (expires_at > now → since_days → severity → tags any-match → query substring); returns `{records, total, filtered}` (#89)
+- Watch runner memory integration: `_remember_finding()` helper invokes remember Lambda synchronously (best-effort, non-blocking); default `auto_remember=True` for literature/cross_discipline watches; `last_remembered_at` field on watch updates (#90)
+- One-shot flow trigger: `_trigger_flow()` creates EventBridge Scheduler `at()` schedule with `ActionAfterCompletion=DELETE` targeting `quicksight:StartAutomationJob`; configurable `delay_minutes`; best-effort, non-blocking (#91)
+- CDK: memory bucket (S3, versioned, RETAIN) + memory registry table (DynamoDB, PITR, deletion protection) in storage stack; `ClawsFlowTriggerRole` IAM role; runner env vars + IAM grants in scheduler stack; `remember` + `recall` Lambda constructs in tools stack (#92)
+- Cedar: `claws.remember` (owner-only write) and `claws.recall` (owner or shared_with read) permits
+- 20 new tests in `tools/tests/test_v17_memory.py`
+
+Full test suite (445 tests: Substrate integration + pure unit). MCP executor for extensibility. All four roadmap themes complete.
 
 ---
 
-### quick-suite-compute ✅ v0.15.0
+### quick-suite-compute ✅ v0.16.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
-Seven AgentCore Lambda tools + Step Functions workflow + 31 analysis profiles across 11 categories.
+Seven AgentCore Lambda tools + Step Functions workflow + 38 analysis profiles across 12 categories.
 
 **Tool Lambdas:**
 - `compute_profiles` — list available profiles with parameters, cost, and duration estimates
@@ -335,7 +349,7 @@ Seven AgentCore Lambda tools + Step Functions workflow + 31 analysis profiles ac
 
 **Router spend integration (Issue #23):** `compute_run` reads `qs-router-spend` (the quick-suite-router's spend ledger) via `ROUTER_SPEND_TABLE` env var (set from `router_spend_table_arn` CDK context); blocks jobs if department cumulative spend + estimated cost exceeds `MONTHLY_BUDGET_USD`; fails open on AWS errors.
 
-**33 Analysis Profiles (Lambda unless noted):**
+**38 Analysis Profiles (Lambda unless noted):**
 Statistics: anova, chi-square
 Prediction/ML: regression-glm, regression-logistic, classification-random-forest
 Forecasting: forecast-prophet, change-detection, seasonality-decompose
@@ -345,7 +359,7 @@ Anomaly: anomaly-isolation-forest
 Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier, intersectionality-equity, assessment-irt
 Geospatial: geo-enrich (Census API), isochrone, spatial-aggregate
 Exploration: explore-correlations
-Research: grant-portfolio, network-coauthor
+Research: grant-portfolio, network-coauthor, causal-iv, causal-rd, causal-did, grant-pipeline, provenance-graph
 Ingest: ingest-netcdf, ingest-pdf-extract, ingest-geojson
 Custom: custom-python (RestrictedPython sandbox), custom-generated (LLM-generated code)
 Transform: transform-spark (EMR Serverless)
@@ -374,9 +388,20 @@ Transform: transform-spark (EMR Serverless)
 - `assessment-irt` (#62): 2PL IRT model via `girth` library; returns three tables — `item_parameters` (difficulty, discrimination), `person_abilities` (theta, se), `item_information`; graceful 503 if `girth` not installed; min 5 items / 100 respondents enforced
 - 10 new tests: `TestIntersectionalityEquity` (5) + `TestAssessmentIRT` (5)
 
+**v0.16.0 causal inference + research intelligence:**
+- Runner plain-dict dispatch fix: coerce dict → diagnostics + empty DataFrame after `_dispatch()`; prevents AttributeError for all plain-dict handlers
+- `causal-iv` (#63): 2SLS instrumental variables via `linearmodels`; first-stage F-stat, weak instrument warning (F < 10), compliance rate, 95% CI; optional `peer_benchmark` annotates with peer cohort
+- `causal-rd` (#64): numpy-native regression discontinuity; IK bandwidth formula `h = 2.702 * sigma * n^(-1/5)`; 5-point bandwidth sensitivity; McCrary density manipulation test; fuzzy RD via IV approach
+- `causal-did` (#65): OLS difference-in-differences; parallel trends pre-period test; event study coefficients per time period; placebo pre-period tests; staggered adoption via `csdid` (503 if absent)
+- `grant-pipeline` (#66): PI health scores (active*0.4 + continuity*0.4 + diversity*0.2); NCE risk flagging (end_date ≤60 days + no overlap); sponsor timing analysis
+- `provenance-graph` (#67): W3C PROV-DM JSON-LD lineage from HistoryTable DynamoDB scan; Markdown summary; gap detection for broken input/output chains; `min_rows: 0` (queries DynamoDB, not input DataFrame)
+- `peer_cohort` module (#68): Carnegie class + enrollment ±20% + control type + Pell ±10pt filtering; weighted scoring; 30-day DynamoDB cache in `qs-compute-peer-cohort-cache` table
+- CDK: `PeerCohortCacheTable` DynamoDB (PAY_PER_REQUEST, PITR, deletion protection, TTL); `COMPUTE_HISTORY_TABLE` env var; `linearmodels==6.1` in Docker image
+- 28 new tests: `TestRunnerDispatchPlainDict` (1), `TestPeerCohort` (4), `TestCausalIV` (5), `TestCausalRD` (5), `TestCausalDiD` (5), `TestGrantPipeline` (4), `TestProvenanceGraph` (4)
+
 **Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (530 unit tests); Substrate integration in CI.
+Full test suite (583 unit tests); Substrate integration in CI.
 
 ---
 
