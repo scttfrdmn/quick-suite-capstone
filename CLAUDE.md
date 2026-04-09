@@ -333,11 +333,11 @@ Full test suite (455 tests: Substrate integration + pure unit). MCP executor for
 
 ---
 
-### quick-suite-compute ✅ v0.17.0
+### quick-suite-compute ✅ v0.18.0
 
 GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
 
-Seven AgentCore Lambda tools + Step Functions workflow + 41 analysis profiles across 12 categories.
+Seven AgentCore Lambda tools + Step Functions workflow + 42 analysis profiles across 12 categories.
 
 **Tool Lambdas:**
 - `compute_profiles` — list available profiles with parameters, cost, and duration estimates
@@ -369,7 +369,7 @@ Forecasting: forecast-prophet, change-detection, seasonality-decompose
 Clustering: clustering-kmeans
 Text: text-topics, text-sentiment, text-similarity
 Anomaly: anomaly-isolation-forest
-Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier, intersectionality-equity, assessment-irt
+Higher-Ed: cohort-flow, dfwi-analysis, equity-gap, peer-benchmark, retention-cohort, survival-kaplan-meier, intersectionality-equity, assessment-irt, financial-aid-effectiveness
 Geospatial: geo-enrich (Census API), isochrone, spatial-aggregate
 Exploration: explore-correlations
 Research: grant-portfolio, network-coauthor, causal-iv, causal-rd, causal-did, grant-pipeline, provenance-graph, power-analysis, anomaly-hypothesis, reproducibility-check
@@ -421,7 +421,13 @@ Transform: transform-spark (EMR Serverless)
 
 **Dashboard:** Per-profile Cost (USD/24h), Duration (p99), and Cumulative Cost (30d SUM) graph widgets generated from `config/profiles/*.json`.
 
-Full test suite (616 unit tests); Substrate integration in CI.
+**v0.18.0 output and delivery:**
+- Results write-back to `qs-data-source-registry`: `record-spend` Lambda writes `compute-result-{job_id}` entries after SUCCEEDED jobs; discoverable via `federated_search` and clAWS `discover`; fail-open; `DATA_REGISTRY_TABLE` env var from CDK context (#58)
+- CSV/Excel export: `deliver` Lambda converts Parquet to CSV + XLSX (1M row limit); presigned S3 URLs (24h TTL) in `compute_status` SUCCEEDED response `export_urls` dict; `openpyxl` added to Docker image (#59)
+- `financial-aid-effectiveness` profile: aid-band cohort tables (`<$5k`, `$5-10k`, `$10-15k`, `>$15k`), IRLS logistic regression for predicted persistence probability, unmet-need trend by aid year; category "higher-ed" (#60)
+- 15 new tests in `tests/test_v18_output.py`
+
+Full test suite (636 unit tests); Substrate integration in CI.
 
 ---
 
