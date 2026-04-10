@@ -39,6 +39,7 @@ jobs:
           scan-ref: .
           severity: HIGH,CRITICAL
           exit-code: 1
+          trivy-config: trivy.yaml
 
       - name: Semgrep SAST
         uses: returntocorp/semgrep-action@v1
