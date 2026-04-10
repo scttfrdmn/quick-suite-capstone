@@ -1,6 +1,6 @@
 [project]
 name = "quick-suite-capstone-integration"
-version = "0.3.0"
+version = "0.6.0"
 description = "Cross-project integration tests for Quick Suite Capstone"
 readme = "README.md"
 license = "Apache-2.0"

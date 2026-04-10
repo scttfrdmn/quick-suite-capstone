@@ -1,0 +1,95 @@
+# recall-brief — On-demand and event-triggered memory brief
+#
+# PURPOSE
+#   Surface pending findings from institutional memory. Two use cases:
+#
+#   1. Manual (user or agent): Run from Quick Suite chat or the Flows panel to
+#      get a summary of what happened since the last session.
+#      Typical prompt: "What happened while I was away?" → trigger this flow.
+#
+#   2. Programmatic (clAWS watch runner): When a watch with `flow_config.flow_id: recall-brief`
+#      fires, the watch runner calls QuickSight start_automation_job to trigger this flow
+#      after a short delay. An email arrives within minutes of the alert.
+#
+#      Watch field that enables this:
+#        flow_config:
+#          flow_id: recall-brief
+#          delay_minutes: 5
+#          input:
+#            severity_filter: ["critical", "warning"]
+#
+# OUTPUT
+#   - When run manually: summary is returned inline as flow output in the chat UI
+#   - When triggered programmatically: EventBridge event → SNS rule → email/Slack
+#
+# DEPENDENCIES
+#   - claws.recall tool (quick-suite-claws v0.17.0+)
+#   - router.summarize tool (quick-suite-router)
+#   - EventBridge rule: source=claws.memory, detail-type=ClawsMemoryBrief → SNS topic
+#     (required only for email/Slack delivery; manual runs return output inline)
+
+flow:
+  name: recall-brief
+  display_name: "Recall Brief"
+  description: >
+    Surface pending findings from institutional memory. Run manually at session start
+    to catch up on what happened, or triggered automatically by the clAWS watch runner
+    when a significant alert fires.
+
+  trigger:
+    type: manual
+    # Also triggered programmatically via QuickSight start_automation_job from
+    # the clAWS watch runner. See docs/institutional-memory.md for the T+x pattern.
+
+  inputs:
+    severity_filter:
+      type: list
+      default: ["critical", "warning"]
+      description: "Which severity levels to include in the brief"
+    since_days:
+      type: integer
+      default: 7
+      description: "How many days back to look for findings"
+
+  steps:
+    - id: recall
+      tool: claws.recall
+      description: "Retrieve pending findings from institutional memory"
+      input:
+        severity: "{{inputs.severity_filter}}"
+        since_days: "{{inputs.since_days}}"
+        limit: 20
+
+    - id: summarize
+      tool: router.summarize
+      description: "Synthesize findings into a researcher-readable brief"
+      input:
+        content: "{{steps.recall.records}}"
+        instruction: >
+          Summarize these pending findings for a researcher opening Quick Suite.
+          Lead with critical items. Use plain language. Include the date each finding
+          was recorded. Group by tag when three or more findings share a tag.
+          If there are no critical findings, say so explicitly at the top.
+          If there are no findings at all, respond with a single sentence:
+          "No critical or warning findings in the last {{inputs.since_days}} days."
+          Do not pad with filler text.
+
+    - id: notify
+      tool: claws.export
+      description: "Fire EventBridge event for email/Slack delivery"
+      input:
+        destination:
+          type: eventbridge
+          uri: "events://default/ClawsMemoryBrief"
+        payload: "{{steps.summarize.content}}"
+        metadata:
+          source: "claws.memory"
+          triggered_by: "recall-brief"
+          record_count: "{{steps.recall.total}}"
+        include_provenance: false
+
+  output:
+    # When run manually from Quick Suite chat, the summarize step output is
+    # returned inline. The notify step fires asynchronously and does not block
+    # the user-facing response.
+    value: "{{steps.summarize.content}}"

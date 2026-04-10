@@ -1,0 +1,101 @@
+# morning-brief — Scheduled daily memory digest
+#
+# PURPOSE
+#   A standing weekday brief that surfaces pending critical and warning findings
+#   from institutional memory every morning at 7am. Users who configure this flow
+#   get findings automatically — they don't need to think about it.
+#
+#   Same logic as recall-brief, different trigger. Set it up once and forget it.
+#
+# THE T+x PATTERN (documented here for reference)
+#   In addition to the scheduled trigger, this flow is designed to work as an
+#   immediate alert target when the clAWS watch runner detects something critical.
+#
+#   Watch runner fires (critical severity)
+#     → EventBridge Scheduler: at(now + 5min)   [one-shot, auto-deletes after firing]
+#     → start_automation_job: flow_id="recall-brief"   [use recall-brief for immediate alerts]
+#     → email arrives within minutes of the alert
+#
+#   The morning-brief is for the standing schedule. Use recall-brief as the
+#   flow_id in watch flow_config for immediate alerts.
+#
+#   See docs/institutional-memory.md for full T+x setup details.
+#
+# OUTPUT
+#   EventBridge event with detail-type ClawsMemoryBrief → SNS rule → email/Slack.
+#   If there are no critical/warning findings, a brief "nothing pending" message is sent.
+#
+# DEPENDENCIES
+#   - claws.recall tool (quick-suite-claws v0.17.0+)
+#   - router.summarize tool (quick-suite-router)
+#   - EventBridge rule: source=claws.memory, detail-type=ClawsMemoryBrief → SNS topic
+#
+# CUSTOMIZATION
+#   Adjust the cron expression to match your timezone and workday preferences.
+#   The default 7am is UTC — adjust for your institution's timezone:
+#     7am US Eastern:  cron(0 12 ? * MON-FRI *)
+#     7am US Pacific:  cron(0 15 ? * MON-FRI *)
+#     8am UK/Dublin:   cron(0 8 ? * MON-FRI *)
+
+flow:
+  name: morning-brief
+  display_name: "Morning Brief"
+  description: >
+    Daily memory digest. Runs automatically at 7am UTC on weekdays and sends a brief
+    of pending critical and warning findings via email/Slack. Configure once; findings
+    from overnight watch runs, literature alerts, and previous sessions accumulate and
+    surface each morning.
+
+  trigger:
+    type: schedule
+    schedule: "cron(0 7 ? * MON-FRI *)"
+    # Runs at 7am UTC, Monday through Friday.
+    # See CUSTOMIZATION notes above to adjust for your timezone.
+
+  inputs:
+    severity_filter:
+      type: list
+      default: ["critical", "warning"]
+      description: "Which severity levels to include"
+    since_days:
+      type: integer
+      default: 7
+      description: "How far back to look for findings"
+
+  steps:
+    - id: recall
+      tool: claws.recall
+      description: "Retrieve pending findings from institutional memory"
+      input:
+        severity: "{{inputs.severity_filter}}"
+        since_days: "{{inputs.since_days}}"
+        limit: 20
+
+    - id: summarize
+      tool: router.summarize
+      description: "Write the morning brief"
+      input:
+        content: "{{steps.recall.records}}"
+        instruction: >
+          Write a concise morning brief for a researcher. Format: one sentence per
+          finding, lead with critical items, group by tag when three or more findings
+          share a tag. Include the date each finding was recorded.
+          If nothing is pending, respond with a single sentence:
+          "No critical or warning findings in the last {{inputs.since_days}} days."
+          Do not pad with filler text or pleasantries. This is a professional brief,
+          not a chatbot response.
+
+    - id: notify
+      tool: claws.export
+      description: "Send the brief via EventBridge → SNS → email/Slack"
+      input:
+        destination:
+          type: eventbridge
+          uri: "events://default/ClawsMemoryBrief"
+        payload: "{{steps.summarize.content}}"
+        metadata:
+          source: "claws.memory"
+          triggered_by: "morning-brief"
+          record_count: "{{steps.recall.total}}"
+          brief_date: "{{now | date: '%Y-%m-%d'}}"
+        include_provenance: false
