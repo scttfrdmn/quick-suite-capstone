@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "quick-suite": {
+      "type": "sse",
+      "url": "${AGENTCORE_GATEWAY_ENDPOINT}",
+      "headers": {
+        "Authorization": "Bearer ${COGNITO_ACCESS_TOKEN}"
+      },
+      "description": "Quick Suite Extensions — data access, analytics, policy-gated queries, and multi-provider LLM routing via Bedrock AgentCore Gateway"
+    }
+  }
+}
