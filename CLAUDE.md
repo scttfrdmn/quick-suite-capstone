@@ -114,6 +114,54 @@ def handler(event, context):
     return {'count': 3, 'datasets': [...]}
 ```
 
+## Tool Timeout Budget
+
+Quick Suite enforces a **60-second hard timeout** on every MCP tool call.
+The router additionally sits behind API Gateway, which imposes a **29-second
+sub-ceiling** on that component only. All other Lambda targets (Data, Compute,
+clAWS) have the full 60s.
+
+| Component | Effective ceiling | Reason |
+|-----------|-----------------|--------|
+| Router (API GW → Lambda) | ~29s | API Gateway integration timeout |
+| All other Lambda targets | 60s | MCP layer timeout |
+
+**Limits are not configurable. There is no streaming or partial-result support.**
+
+### What this means when writing tools
+
+**Stays fast by design:**
+- DynamoDB reads/writes (< 1s)
+- S3 GetObject on small files (< 2s)
+- Athena query dispatch + result read for small tables (< 30s with guard)
+- Most QuickSight API calls (< 5s)
+
+**Risk zone — guard required:**
+- HTTP calls to external APIs: cap each call at ≤ 20s with `urlopen(req, timeout=20)`
+- Fan-out to multiple external sources: use `ThreadPoolExecutor` + `as_completed(timeout=45)` — see `federated_search` as the reference
+- Any synchronous poll loop: set an explicit `timeout_seconds` cap and return early on breach
+
+**Requires the async job/poll pattern (> 50s):**
+Any operation that cannot reliably complete in < 50s must split into two tools:
+
+```python
+# Tool 1: start_job() — returns immediately (< 1s)
+def start_job(params) -> dict:
+    job_id = _deterministic_id(params)   # idempotent: retry returns same job
+    _start_background_work(job_id, params)
+    return {"job_id": job_id, "status": "running"}
+
+# Tool 2: job_status(job_id) — pure DynamoDB read (< 1s)
+def job_status(job_id) -> dict:
+    return _load_job_result(job_id)      # {status: running|complete|error, ...}
+```
+
+Quick Suite's agent polls `job_status` between turns. Each individual tool
+call stays well within its ceiling.
+
+`compute_run` / `compute_status` is the reference implementation of this
+pattern. Follow it for any new long-running tool.
+
 ## Project Status
 
 ### quick-suite-router ✅ v0.12.0
