@@ -48,7 +48,7 @@ The Router is deployed first because it creates the AgentCore Gateway that all o
 extensions will attach to.
 
 ```bash
-git clone https://github.com/scttfrdmn/quick-suite-router.git
+git clone https://github.com/scttfrdmn/campus-router.git
 cd quick-suite-router
 
 uv sync --extra cdk
@@ -108,7 +108,7 @@ available as the fallback with no key needed.
 ## Step 2 — Deploy the Data Extension
 
 ```bash
-git clone https://github.com/scttfrdmn/quick-suite-data.git
+git clone https://github.com/scttfrdmn/campus-data.git
 cd quick-suite-data
 
 uv sync --extra cdk
@@ -171,7 +171,7 @@ This populates the DynamoDB catalog with 500+ public dataset entries. Without th
 ## Step 3 — Deploy Compute
 
 ```bash
-git clone https://github.com/scttfrdmn/quick-suite-compute.git
+git clone https://github.com/scttfrdmn/campus-compute.git
 cd quick-suite-compute
 
 uv sync --extra cdk

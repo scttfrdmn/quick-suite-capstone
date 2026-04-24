@@ -4,7 +4,7 @@ description: |
   Retention analyst discovers student retention cohort data via clAWS
   (Glue/Athena), excavates first-to-second year retention records by cohort
   and Pell grant status, runs a cohort retention analysis in
-  quick-suite-compute, and exports results to S3 for accreditation reporting.
+  campus-compute, and exports results to S3 for accreditation reporting.
 category: institutional-analytics
 requires:
   stacks: [claws, compute]

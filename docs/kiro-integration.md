@@ -1,7 +1,7 @@
 # Using Quick Suite Extensions in AWS Kiro
 
 AWS Kiro is an agentic IDE that supports MCP servers natively. Since
-Quick Suite Extensions register all their tools through a single Bedrock
+Campus AgentCore registers all their tools through a single Bedrock
 AgentCore Gateway — which is an MCP server — Kiro can use the same tools
 that Quick Suite's chat agent uses. Same infrastructure, same Cedar
 policies, same Guardrails, same audit trail.

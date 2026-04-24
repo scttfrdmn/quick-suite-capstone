@@ -23,7 +23,7 @@ super-populations. This workflow operates on a **pre-processed PCA summary
 table** with columns `sample_id`, `super_population`, and `pc1` through `pc5`.
 The raw variant calls (multi-sample VCFs) are large and require PCA
 preprocessing with tools like PLINK2 or HAIL before this workflow begins;
-register the PCA output as a RODA-accessible path using the quick-suite-data
+register the PCA output as a RODA-accessible path using the campus-data
 `register-source` Lambda. No IRB approval is required — 1000 Genomes data is
 publicly consented for research use.
 

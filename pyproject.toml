@@ -1,7 +1,7 @@
 [project]
-name = "quick-suite-capstone-integration"
+name = "campus-agentcore"
 version = "0.6.0"
-description = "Cross-project integration tests for Quick Suite Capstone"
+description = "Campus AgentCore — integration tests and examples"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"

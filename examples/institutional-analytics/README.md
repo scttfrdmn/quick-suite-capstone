@@ -3,7 +3,7 @@
 This directory contains cross-stack Quick Suite workflow examples built for
 university institutional analytics use cases. Each example demonstrates how
 Quick Suite's constituent capabilities — clAWS for policy-gated institutional
-data excavation, quick-suite-data for public RODA/IPEDS datasets, quick-suite-compute
+data excavation, campus-data for public RODA/IPEDS datasets, campus-compute
 for analytics profiles, and the model router for narrative generation — compose
 into end-to-end analytical pipelines that IR offices, advancement teams, and
 compliance staff can run directly from the Quick Suite agent interface.

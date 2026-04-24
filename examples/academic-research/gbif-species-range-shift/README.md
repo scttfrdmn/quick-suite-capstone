@@ -28,6 +28,6 @@ stored as named snapshots and retrievable via `compute_snapshots`.
 **Prerequisites:** None. GBIF occurrence snapshots and Census ACS data are
 publicly accessible. The `geo-enrich` profile calls the Census Bureau's
 geocoding and ACS APIs; no additional API keys are required when running via
-the quick-suite-compute Lambda target. Enrichment runtime scales with the
+the campus-compute Lambda target. Enrichment runtime scales with the
 number of occurrence records — filtering to a single species or taxon before
 loading is recommended for initial runs.

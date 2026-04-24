@@ -3,8 +3,8 @@
 A public health researcher uses Quick Suite to model social determinants of
 diabetes prevalence at the census tract level using CDC PLACES data, then
 generates a grant-ready narrative summarizing the findings. The workflow spans
-all three stacks: quick-suite-data discovers and loads the dataset,
-quick-suite-compute runs a logistic regression, and quick-suite-router drafts
+all three stacks: campus-data discovers and loads the dataset,
+campus-compute runs a logistic regression, and campus-router drafts
 the significance section using the `analyze` tool.
 
 **Data source:** CDC PLACES (Population Level Analysis and Community
@@ -24,7 +24,7 @@ Both the regression result and narrative are scoped to the
 `cdc-places-diabetes-sdoh-regression` snapshot.
 
 **Prerequisites:** None. CDC PLACES is a publicly available RODA dataset. The
-router `analyze` tool requires the quick-suite-router stack to be deployed and
+router `analyze` tool requires the campus-router stack to be deployed and
 the `public-health` department to have budget headroom in the spend ledger.
 The `context` field passes the `result_uri` (S3 path) directly to the router;
 the router's Lambda reads the Parquet file to ground the narrative in the

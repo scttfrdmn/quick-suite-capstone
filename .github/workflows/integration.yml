@@ -26,10 +26,10 @@ jobs:
 
       - name: Clone sub-projects
         run: |
-          git clone https://github.com/scttfrdmn/quick-suite-claws.git quick-suite-claws
-          git clone https://github.com/scttfrdmn/quick-suite-compute.git quick-suite-compute
-          git clone https://github.com/scttfrdmn/quick-suite-data.git quick-suite-data
-          git clone https://github.com/scttfrdmn/quick-suite-router.git quick-suite-router
+          git clone https://github.com/scttfrdmn/campus-claws.git campus-claws
+          git clone https://github.com/scttfrdmn/campus-compute.git campus-compute
+          git clone https://github.com/scttfrdmn/campus-data.git campus-data
+          git clone https://github.com/scttfrdmn/campus-router.git campus-router
 
       - name: Set up Go
         uses: actions/setup-go@v5

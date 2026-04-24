@@ -4,7 +4,7 @@ description: |
   A public health researcher searches for CDC PLACES local health measures
   on the Registry of Open Data on AWS, runs a logistic regression modeling
   social determinants of diabetes prevalence directly against the public CDC
-  S3 dataset, and then uses the quick-suite-router analyze tool to draft a
+  S3 dataset, and then uses the campus-router analyze tool to draft a
   grant significance section summarizing the key drivers of variation. The
   compute layer reads CDC BRFSS prevalence data directly from S3, bypassing
   the Quick Sight loading step. The workflow illustrates how all three stacks

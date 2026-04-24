@@ -1,11 +1,13 @@
-# CLAUDE.md — Quick Suite Extensions Monorepo
+# CLAUDE.md — Campus AgentCore
 
 ## What Is This
 
-Four independent CDK projects that extend Amazon Quick Suite through
-Bedrock AgentCore Gateway. All tools surface as MCP tools in AgentCore
-Gateway. Quick Suite's built-in agent orchestration decides which tools
-to call — the individual projects don't orchestrate each other.
+Four CDK-deployed tool planes on Amazon Bedrock AgentCore Gateway,
+purpose-built for higher-ed research computing. Any MCP-capable agent
+can connect — Quick Suite is the primary example front-end, alongside
+Kiro and custom agents. All tools surface as MCP tools in AgentCore
+Gateway. The connected agent's orchestration decides which tools to
+call — the individual projects don't orchestrate each other.
 
 **Product terminology (get this right):**
 
@@ -28,23 +30,25 @@ to call — the individual projects don't orchestrate each other.
   as the MCP tool server. Converts APIs and Lambda functions into
   MCP-compatible tools. Handles auth, routing, semantic search.
 
-- **MCP Actions** — how Quick Suite connects to external tools.
-  Quick Suite → MCP Actions → AgentCore Gateway → Targets.
+- **MCP Actions** — how MCP-capable agents connect to external tools.
+  Example: Quick Suite → MCP Actions → AgentCore Gateway → Targets.
+  Kiro and custom agents connect the same way.
 
 ```
-~/src/quick-suite-capstone/
+~/src/campus-agentcore/
 ├── CLAUDE.md                        ← you are here
 ├── README.md
-├── quick-suite-router/              # LLM multi-provider routing — GitHub: quick-suite-router
-├── quick-suite-data/                # Public + institutional data access — GitHub: quick-suite-data
-├── quick-suite-compute/             # Ephemeral analytics compute — GitHub: quick-suite-compute
-└── quick-suite-claws/               # Policy-gated data excavation tool plane — GitHub: quick-suite-claws
+├── quick-suite-router/              # LLM multi-provider routing — GitHub: campus-router
+├── quick-suite-data/                # Public + institutional data access — GitHub: campus-data
+├── quick-suite-compute/             # Ephemeral analytics compute — GitHub: campus-compute
+└── quick-suite-claws/               # Policy-gated data excavation tool plane — GitHub: campus-claws
 ```
 
 ## Target Architecture
 
 ```
-Amazon Quick Suite (Chat Agent / Quick Research / Quick Flows)
+Any MCP-capable agent (Quick Suite / Kiro / custom agents)
+    │  e.g. Quick Suite: Chat Agent / Quick Research / Quick Flows
     │
     │  MCP Actions
     ▼
@@ -76,9 +80,9 @@ Bedrock AgentCore Gateway (MCP server, single Gateway, OAuth via Cognito)
 ```
 
 **AgentCore Gateway is the orchestration layer, not the model router.**
-The Gateway discovers all tools, Quick Suite's agent picks which to call,
-and the Gateway dispatches to the correct backend. The model router is
-one peer among several tool sets.
+The Gateway discovers all tools, the connected agent (Quick Suite, Kiro,
+or custom) picks which to call, and the Gateway dispatches to the correct
+backend. The model router is one peer among several tool sets.
 
 **All data and compute Lambdas are AgentCore Gateway Lambda targets.**
 - No API Gateway needed — AgentCore Gateway invokes Lambdas directly via
@@ -156,7 +160,7 @@ def job_status(job_id) -> dict:
     return _load_job_result(job_id)      # {status: running|complete|error, ...}
 ```
 
-Quick Suite's agent polls `job_status` between turns. Each individual tool
+The connected agent polls `job_status` between turns. Each individual tool
 call stays well within its ceiling.
 
 `compute_run` / `compute_status` is the reference implementation of this
@@ -164,9 +168,9 @@ pattern. Follow it for any new long-running tool.
 
 ## Project Status
 
-### quick-suite-router ✅ v0.12.0
+### campus-router ✅ v0.12.0
 
-GitHub: [scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
+GitHub: [scttfrdmn/campus-router](https://github.com/scttfrdmn/campus-router)
 
 Python CDK. Six tool endpoints (`analyze`, `generate`, `research`,
 `summarize`, `code`, `extract`). Four providers: Bedrock, Anthropic direct, OpenAI
@@ -216,9 +220,9 @@ direct, Google Gemini direct.
 
 ---
 
-### quick-suite-data ✅ v0.13.0
+### campus-data ✅ v0.13.0
 
-GitHub: [scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
+GitHub: [scttfrdmn/campus-data](https://github.com/scttfrdmn/campus-data)
 
 Five original AgentCore Lambda tools + five new v0.6.0 tools + internal Lambdas.
 
@@ -292,9 +296,9 @@ Full test suite (372 unit tests; Substrate integration).
 
 ---
 
-### quick-suite-claws ✅ v0.18.0
+### campus-claws ✅ v0.18.0
 
-GitHub: [scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
+GitHub: [scttfrdmn/campus-claws](https://github.com/scttfrdmn/campus-claws)
 
 Nine AgentCore tool Lambdas + two internal Lambdas + Cedar policies + Bedrock Guardrail configs + CDK stacks.
 
@@ -381,9 +385,9 @@ Full test suite (455 tests: Substrate integration + pure unit). MCP executor for
 
 ---
 
-### quick-suite-compute ✅ v0.18.0
+### campus-compute ✅ v0.18.0
 
-GitHub: [scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
+GitHub: [scttfrdmn/campus-compute](https://github.com/scttfrdmn/campus-compute)
 
 Seven AgentCore Lambda tools + Step Functions workflow + 42 analysis profiles across 12 categories.
 
@@ -491,7 +495,7 @@ Full test suite (636 unit tests); Substrate integration in CI.
 
 ### Naming
 
-Repos/local dirs: `quick-suite-{router,data,compute,claws}` (GitHub and local match)
+GitHub repos: `campus-{router,data,compute,claws}`; local dirs: `quick-suite-{router,data,compute,claws}`
 CDK stacks: `QuickSuiteRouter`, `QuickSuiteData`, `QuickSuiteCompute`, `QuickSuiteClaws`
 Lambda prefix: `qs-router-`, `qs-data-`, `qs-compute-`, `qs-claws-`
 DynamoDB prefix: `qs-`
@@ -502,11 +506,11 @@ SSM prefix: `/quick-suite/`
 Work is tracked in GitHub — not in local files. Do not add TODO lists or task
 tracking to CLAUDE.md files or create TODO.md files.
 
-- **Capstone (suite):** https://github.com/scttfrdmn/quick-suite-capstone/issues
-- **Model Router:** https://github.com/scttfrdmn/quick-suite-router/issues
-- **Open Data:** https://github.com/scttfrdmn/quick-suite-data/issues
-- **Compute:** https://github.com/scttfrdmn/quick-suite-compute/issues
-- **clAWS:** https://github.com/scttfrdmn/quick-suite-claws/issues
+- **Capstone (suite):** https://github.com/scttfrdmn/campus-agentcore/issues
+- **Model Router:** https://github.com/scttfrdmn/campus-router/issues
+- **Open Data:** https://github.com/scttfrdmn/campus-data/issues
+- **Compute:** https://github.com/scttfrdmn/campus-compute/issues
+- **clAWS:** https://github.com/scttfrdmn/campus-claws/issues
 
 Each sub-project has its own milestones, labels, and project board.
 All release planning happens via milestones. Changelogs follow keepachangelog,

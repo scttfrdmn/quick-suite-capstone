@@ -7,10 +7,10 @@ compute or data pipelines. Every example uses public datasets from the
 Registry of Open Data on AWS (RODA); no data transfer fees or proprietary
 data agreements are required to run them.
 
-Each workflow uses the quick-suite-data stack for dataset discovery and
-loading (`roda_search`, `roda_load`) and the quick-suite-compute stack for
+Each workflow uses the campus-data stack for dataset discovery and
+loading (`roda_search`, `roda_load`) and the campus-compute stack for
 analysis (`compute_run`, `compute_status`). The CDC Health Disparities example
-also uses quick-suite-router to generate a grant narrative from the regression
+also uses campus-router to generate a grant narrative from the regression
 results. All tools surface as MCP tools in Bedrock AgentCore Gateway; Quick
 Suite's agent orchestration selects and sequences them automatically when
 invoked from the chat interface.
