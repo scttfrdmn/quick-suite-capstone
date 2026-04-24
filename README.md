@@ -1,57 +1,53 @@
-# Quick Suite Extensions
+# Campus AgentCore
 
-Most universities already pay for Amazon Quick Suite — the $20–40/user/month
-agentic AI workspace that bundles Quick Sight (BI), Quick Research (deep
-research), Quick Flows (workflow automation), Quick Automate (process
-optimization), and Quick Index (data discovery). It's a capable platform out
-of the box: it can chat with your documents, build dashboards from data already
-in Quick Sight, run deep research across the web, and automate workflows.
+An AgentCore-native tool plane for higher-ed research computing, built on
+**Amazon Bedrock AgentCore Gateway**. Any MCP-capable agent — Amazon Quick
+Suite, AWS Kiro, custom agents, or Claude.ai — connects once and gains access
+to policy-gated data access, multi-provider LLM routing, statistical compute,
+and literature/grant intelligence purpose-built for universities.
 
-**But there are things it cannot do alone.** It can't reach into a raw Athena
-database, can't pull from 500+ public research datasets on demand, can't run a
-clustering analysis on 300,000 student records, can't query Snowflake or
-Redshift natively, and has no way to enforce fine-grained data access policies
-at the query level.
-
-**These extensions close those gaps.** They turn an institution's existing
-Quick Suite subscription into a full research and analytics platform — without
-requiring a data engineer in the room every time someone has a question. For
-universities evaluating AWS, the extensions make Quick Suite the anchor: a
-single subscription that covers BI, deep research, workflow automation, *and*
-the statistical analysis and governed data access that higher ed actually needs.
+**Quick Suite is the primary example front-end** — and the anchor for AWS
+conversations with R1 institutions. Quick Sight is where results land as
+dashboards and datasets. But the tool plane itself is agent-agnostic: deploy
+once, connect any MCP-compatible orchestrator.
 
 ---
 
-## What Changes With These Extensions
+## What Most AI Agents Can't Do With Campus Data
 
-| Without extensions | With them |
-|--------------------|-----------|
-| Only sees data already loaded into Quick Sight | Searches and loads any of 500+ public research datasets, plus Snowflake, Redshift, and institutional S3 — on demand |
+Out of the box, AI agents — including Quick Suite — can chat with documents,
+generate summaries, and reason over data already in their context. What they
+can't do is reach into a university's actual infrastructure:
+
+| Without these tools | With Campus AgentCore |
+|---------------------|----------------------|
+| Only sees data already in the agent's context or Quick Sight | Searches and loads any of 500+ public research datasets, plus Snowflake, Redshift, and institutional S3 — on demand |
 | No access to research literature or grant databases | Searches PubMed, bioRxiv, arXiv, Semantic Scholar, NIH Reporter, NSF Awards, IPEDS, Zenodo, and Figshare from the chat interface |
 | Can't query a raw Athena table or execute analytical SQL | Plans and executes policy-gated queries against any approved data source, with Cedar + Guardrails enforcement |
-| No statistical compute — charts only | Runs 42 analysis profiles across 12 categories: clustering, regression, forecasting, causal inference, IRT, survival analysis, and more |
+| No statistical compute — text summaries only | Runs 42 analysis profiles across 12 categories: clustering, regression, forecasting, causal inference, IRT, survival analysis, and more |
 | Uses one built-in LLM | Routes to the best available model (Bedrock, Anthropic, OpenAI, Gemini) per task, with automatic fallback and capability matching |
 | No per-query access control beyond IAM | Cedar policies enforce who can query what at the query level; column-level filtering; IRB approval workflows |
 | No chain-of-custody for exported data | Every export carries a provenance chain: who queried what, when, under which policy |
 | Reactive only — answers what you ask | Proactive watches monitor for new grants, literature, compliance gaps, and accreditation evidence automatically |
 
-The extensions work through **Amazon Bedrock AgentCore Gateway**, which acts as
-a bridge between Quick Suite and these new capabilities. Quick Suite's agent
-sees all the new tools the same way it sees its built-in ones — through
-natural conversation.
+The tools work through **Amazon Bedrock AgentCore Gateway**, which acts as an
+MCP server. Any MCP-capable agent sees all the tools the same way it sees its
+built-in ones — through natural conversation or tool calls.
 
 ---
 
-## The Four Extensions
+## The Four Tool Sets
 
 ### Router — Multi-Provider LLM Routing
-[github.com/scttfrdmn/quick-suite-router](https://github.com/scttfrdmn/quick-suite-router)
+[github.com/scttfrdmn/campus-router](https://github.com/scttfrdmn/campus-router)
 
-Quick Suite has one built-in language model. The Router gives it access to four
-providers — Amazon Bedrock, Anthropic (Claude), OpenAI (GPT), and Google
+Most agents are bound to a single language model. The Router adds access to
+four providers — Amazon Bedrock, Anthropic (Claude), OpenAI (GPT), and Google
 (Gemini) — and intelligently routes each request to the best option based on
 task type, required capabilities, context window needs, and provider
-availability.
+availability. When used with Quick Suite, it extends the platform's built-in
+model without replacing it; in Kiro or custom agents, it's the shared model
+layer.
 
 **Six tool endpoints:** `analyze`, `generate`, `research`, `summarize`, `code`,
 and `extract` — each with provider-specific optimizations and automatic
@@ -84,17 +80,20 @@ All responses pass through Bedrock Guardrails regardless of which model
 answered. Guardrail version is managed via SSM Parameter Store — update without
 redeployment.
 
-**What it adds to Quick Suite:** Choice of model without changing the
+**What it adds to any MCP agent:** Choice of model without changing the
 interface. Governance that follows the result regardless of where it came from.
-Cost controls that prevent runaway spend.
+Cost controls that prevent runaway spend. In Quick Suite, results land in Quick
+Sight; in Kiro or custom agents, the same tool calls return the same governed
+output.
 
 ---
 
 ### Data — Public, Institutional, and Research Data Access
-[github.com/scttfrdmn/quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
+[github.com/scttfrdmn/campus-data](https://github.com/scttfrdmn/campus-data)
 
-Quick Suite only knows about data already loaded into Quick Sight. The Data
-extension connects it to everything else.
+Most agents only know about data already in their context or a connected
+warehouse. The Data tool set connects any MCP agent to everything else a
+university has.
 
 **15 tool Lambdas across five source categories:**
 
@@ -120,18 +119,20 @@ once is discoverable everywhere.
 Secrets Manager ARNs, validated against a prefix allowlist — no shared service
 account required.
 
-**What it adds to Quick Suite:** On-demand access to public research datasets,
+**What it adds to any MCP agent:** On-demand access to public research datasets,
 institutional data warehouses, and scientific literature — all from the chat
-interface. No data engineer required.
+interface. No data engineer required. Quick Suite delivers loaded data as Quick
+Sight datasets; Kiro and custom agents receive the same records via MCP tool
+responses.
 
 ---
 
 ### Compute — Ephemeral Analytics
-[github.com/scttfrdmn/quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
+[github.com/scttfrdmn/campus-compute](https://github.com/scttfrdmn/campus-compute)
 
-Quick Suite can visualize data and generate text summaries, but it cannot run
-statistics. The Compute extension brings **42 analysis profiles across 12
-categories** to Quick Suite's chat interface:
+AI agents can generate text summaries, but they cannot run statistics.
+The Compute tool set brings **42 analysis profiles across 12 categories**
+to any MCP agent's tool interface:
 
 | Category | Profiles | Examples |
 |----------|---------|---------|
@@ -171,19 +172,21 @@ EventBridge Scheduler).
 - **VPC and KMS** — optional private VPC deployment and customer-managed KMS
   encryption
 
-**What it adds to Quick Suite:** Statistical analysis accessible through
+**What it adds to any MCP agent:** Statistical analysis accessible through
 conversation, with built-in budget controls, chained profiles, named snapshots,
-scheduled jobs, and automatic results delivery to Quick Sight.
+and scheduled jobs. In Quick Suite, results land automatically as Quick Sight
+datasets; in Kiro or custom agents, presigned download URLs and structured
+result JSON are returned via MCP.
 
 ---
 
 ### clAWS — Policy-Gated Data Excavation and Proactive Intelligence
-[github.com/scttfrdmn/quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
+[github.com/scttfrdmn/campus-claws](https://github.com/scttfrdmn/campus-claws)
 
-clAWS is for when you need to go deeper: run a precise analytical query against
-a restricted Athena table, search an OpenSearch index, query PostgreSQL or
-Redshift directly, or extract a specific slice of a large dataset — all with
-documented evidence of what was accessed and why it was permitted.
+clAWS is for when any MCP agent needs to go deeper: run a precise analytical
+query against a restricted Athena table, search an OpenSearch index, query
+PostgreSQL or Redshift directly, or extract a specific slice of a large dataset
+— all with documented evidence of what was accessed and why it was permitted.
 
 **Two independent safety layers on every query:**
 - **Cedar policies** — structural, deterministic rules evaluated at the Gateway
@@ -237,12 +240,13 @@ documented evidence of what was accessed and why it was permitted.
 
 **Institutional memory:**
 - `claws.remember` — append findings to versioned S3 NDJSON with ETag
-  conditional writes; auto-registers as QuickSight dataset via Data extension
+  conditional writes; auto-registers as Quick Sight dataset via Data extension
 - `claws.recall` — filter stored records by date, severity, tags, or keyword
 - Watch runners auto-remember findings by default; one-shot flow triggers
-  create EventBridge schedules for Quick Flows automation
+  create EventBridge schedules for automation (Quick Flows in Quick Suite;
+  any EventBridge-aware orchestrator elsewhere)
 
-**What it adds to Quick Suite:** Safe, auditable, policy-controlled queries
+**What it adds to any MCP agent:** Safe, auditable, policy-controlled queries
 against raw institutional and research databases. Proactive monitoring that
 surfaces findings before anyone asks. The provenance chain every compliance
 office needs.
@@ -251,14 +255,15 @@ office needs.
 
 ## How the Pieces Work Together
 
-The four extensions aren't independent add-ons — they form an integrated
+The four tool sets aren't independent add-ons — they form an integrated
 platform where the whole is greater than the sum of the parts.
 
 ```
-Quick Suite conversation
+Any MCP-capable agent (Quick Suite, Kiro, custom agent, Claude.ai)
         │
+        │  MCP tool calls
         ▼
-AgentCore Gateway  ←  all tools register here
+AgentCore Gateway  ←  all tools register here as MCP targets
         │
         ├── Router   routes to best model; tracks spend; enforces PHI boundaries
         │     │
@@ -274,7 +279,7 @@ AgentCore Gateway  ←  all tools register here
         ├── clAWS    queries data under policy; remembers findings; watches for changes
         │     │
         │     │  excavation results ──→ Compute analyzes them
-        │     │  memory ──→ Data registers as QuickSight dataset
+        │     │  memory ──→ Data registers as Quick Sight dataset
         │     │  watch findings ──→ Router summarizes; flow triggers automate response
         │     │
         └── Compute  runs analysis; writes results back to registry
@@ -283,14 +288,21 @@ AgentCore Gateway  ←  all tools register here
               provenance graph ──→ reads from own history table
 ```
 
+**Quick Suite** connects to AgentCore Gateway via MCP Actions. The agent sees
+all tools through natural conversation; Quick Sight receives loaded datasets
+and compute results automatically. **Kiro** connects via the same Gateway
+endpoint using its MCP client configuration — the same tools, same policies,
+same audit trail.
+
 **Concrete cross-stack flows:**
 
 1. **Data → clAWS → Compute:** Load IPEDS enrollment data → clAWS discovers it
    in the registry → Compute runs survival analysis on the loaded dataset
 
-2. **clAWS → Router → Memory → Quick Flows:** A literature watch fires → Router
+2. **clAWS → Router → Memory → Automation:** A literature watch fires → Router
    `summarize` drafts a briefing → `remember` stores the finding → flow trigger
-   sends it to the PI's inbox next morning
+   sends it to the PI's inbox next morning (via Quick Flows in Quick Suite, or
+   any EventBridge-aware orchestrator)
 
 3. **Compute → Data Registry → clAWS:** A grant-portfolio analysis completes →
    results auto-register in the Data source registry → clAWS `discover` finds
@@ -306,6 +318,7 @@ AgentCore Gateway  ←  all tools register here
 
 For provosts, deans, enrollment managers, and academic affairs teams — analysis
 that supports academic program decisions, student success, and accreditation.
+Any MCP agent can drive these workflows; Quick Suite is the primary example.
 
 **What's available:** Nine higher-ed compute profiles purpose-built for
 academic analysis, plus clAWS data excavation for institutional data sources
@@ -363,6 +376,7 @@ to identify which items discriminate well and which need revision."*
 
 For research offices, sponsored programs, compliance teams, and grants
 managers — analysis that supports the research enterprise infrastructure.
+Any MCP agent can drive these workflows.
 
 **What's available:** Ten research compute profiles, clAWS proactive watches,
 per-principal budget controls, and integration with NIH Reporter, NSF Awards,
@@ -423,7 +437,8 @@ collaboration."*
 
 For faculty, postdocs, and graduate students doing actual science — hypothesis
 generation, experimental design, literature monitoring, and data analysis
-workflows that support the research cycle.
+workflows that support the research cycle. Any MCP agent can drive these
+workflows.
 
 **What's available:** Science-specific compute profiles (causal inference, power
 analysis, reproducibility checking, anomaly-to-hypothesis), literature search
@@ -549,43 +564,45 @@ AWS_PROFILE=aws python3 -m pytest tests/scenarios/test_scenarios.py -v -k "grant
 
 ## Deployment Model
 
-These extensions are deployed **once at the institutional level** by a cloud or
-IT team, then made available to users and groups through Quick Suite's standard
-sharing mechanism. Individual users don't install anything — the tools appear
-in their Quick Suite chat interface once an administrator shares the
-integration.
+Campus AgentCore is deployed **once at the institutional level** by a cloud or
+IT team, then made available to any MCP-capable agent through a single
+AgentCore Gateway endpoint. Individual users don't install anything — the tools
+appear in their agent interface once an administrator shares the integration.
 
 **1. Deploy the CDK stacks** — one time, into your institution's AWS account.
-The four extensions share a single AgentCore Gateway.
+The four tool sets share a single AgentCore Gateway.
 
-**2. Configure MCP Actions** — in the Quick Suite admin console, create an MCP
-Action pointing to the Gateway endpoint.
+**2. Register the Gateway as an MCP target** — in Quick Suite, create an MCP
+Action pointing to the Gateway endpoint; in Kiro, add the Gateway URL to your
+MCP server list; in a custom agent, pass the Gateway URL as the MCP server
+endpoint.
 
-**3. Share with users and groups** — assign via Quick Suite's standard sharing
-controls. An IR analyst, a faculty researcher, and a financial aid officer all
-use the same integration with different data access permissions — controlled by
-Cedar policies in clAWS, not separate stacks.
+**3. Share with users and groups** — assign via your agent platform's standard
+sharing controls. An IR analyst, a faculty researcher, and a financial aid
+officer all use the same integration with different data access permissions —
+controlled by Cedar policies in clAWS, not separate stacks.
 
 Access control for sensitive data is a policy update, not a redeployment.
 
 See [`docs/deployment-guide.md`](docs/deployment-guide.md) for the complete
-walkthrough.
+walkthrough, including Quick Suite MCP Actions setup, Kiro MCP configuration,
+and custom agent integration.
 
 ## Getting Started
 
-- [quick-suite-router](https://github.com/scttfrdmn/quick-suite-router) — deploy first; provides the shared Gateway ID
-- [quick-suite-data](https://github.com/scttfrdmn/quick-suite-data)
-- [quick-suite-compute](https://github.com/scttfrdmn/quick-suite-compute)
-- [quick-suite-claws](https://github.com/scttfrdmn/quick-suite-claws)
+- [campus-router](https://github.com/scttfrdmn/campus-router) — deploy first; provides the shared Gateway ID
+- [campus-data](https://github.com/scttfrdmn/campus-data)
+- [campus-compute](https://github.com/scttfrdmn/campus-compute)
+- [campus-claws](https://github.com/scttfrdmn/campus-claws)
 
 ## Documentation
 
 | Document | What it covers |
 |----------|---------------|
-| [`docs/kiro-integration.md`](docs/kiro-integration.md) | Using Quick Suite Extensions in AWS Kiro (MCP setup, per-tool and cross-tool examples) |
-| [`docs/deployment-guide.md`](docs/deployment-guide.md) | CDK deploy order, AgentCore Gateway config, MCP Actions setup, user/group sharing |
+| [`docs/kiro-integration.md`](docs/kiro-integration.md) | Using Campus AgentCore in AWS Kiro (MCP setup, per-tool and cross-tool examples) |
+| [`docs/deployment-guide.md`](docs/deployment-guide.md) | CDK deploy order, AgentCore Gateway config, MCP setup for Quick Suite / Kiro / custom agents |
 | [`docs/quick-research-integration.md`](docs/quick-research-integration.md) | Using Quick Research with compute and clAWS results |
-| [`docs/institutional-memory.md`](docs/institutional-memory.md) | Persistent memory layer — S3 + QuickSight, the T+x push pattern, setup |
+| [`docs/institutional-memory.md`](docs/institutional-memory.md) | Persistent memory layer — S3 + Quick Sight, the T+x push pattern, setup |
 | [`docs/proactive-intelligence-roadmap.md`](docs/proactive-intelligence-roadmap.md) | Strategic roadmap — reactive to proactive platform shift |
 | [`docs/proactive-intelligence-science.md`](docs/proactive-intelligence-science.md) | Roadmap extension — proactive tools for experimental science |
 | [`docs/prompts/ir-analyst.md`](docs/prompts/ir-analyst.md) | Example prompts for IR analysts |
@@ -607,7 +624,7 @@ Review, and Cross-Discipline Signal Detector.
 
 ## Cost
 
-At idle, all four extensions cost roughly $10–15/month. Compute jobs run
+At idle, all four tool sets cost roughly $10–15/month. Compute jobs run
 $0.01–$0.50 depending on profile and dataset size. Athena queries at standard
 $5/TB pricing with partition pruning typically reducing scans to pennies.
 
